@@ -4,10 +4,10 @@ from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
-from models import Agent2State
-from tools.news_api_tool import fetch_financial_news
-from tools.reddit_tool import fetch_reddit_sentiment
-from tools.twitter_tool import fetch_twitter_sentiment
+from src.models import Agent2State
+from src.tools.news_api_tool import fetch_financial_news
+from src.tools.reddit_tool import fetch_reddit_sentiment
+from src.tools.twitter_tool import fetch_twitter_sentiment
 
 logger = logging.getLogger(__name__)
 
