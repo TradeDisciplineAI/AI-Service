@@ -1,7 +1,9 @@
 import os
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session
 
 # Import our schema (the blueprint) from schemas.py
 from src.schemas import AnalyzeRequest 
@@ -14,12 +16,21 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# OPTIMIZATION 1: Dependency Injection for the Database
+# This automatically opens and closes database sessions safely for every route
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 @router.get("/health")
 def health_check():
     return {"status": "healthy"}
 
 @router.post("/analyze")
-def analyze_stock(request: AnalyzeRequest):
+async def analyze_stock(request: AnalyzeRequest, db: Session = Depends(get_db)): # <--- Async & DB Injection
     if not os.getenv("GOOGLE_API_KEY"):
         raise HTTPException(status_code=500, detail="Missing GOOGLE_API_KEY in .env")
         
@@ -27,15 +38,12 @@ def analyze_stock(request: AnalyzeRequest):
         inputs = {"ticker": request.ticker.upper()}
         logger.info(f"Received request to analyze {inputs['ticker']}")
         
-        # 1. Get the JSON from the AI
-        result = agent2_app.invoke(inputs)
+        # OPTIMIZATION 3: Run the AI in a background thread so it doesn't freeze the API!
+        result = await run_in_threadpool(agent2_app.invoke, inputs)
         final_json = result.get("final_analysis_json", {})
         
         # Extract the headlines list from the AI's output (default to empty list if missing)
         top_headlines = final_json.get("top_headlines", [])
-        
-        # 2. Save it to the PostgreSQL Database
-        db = SessionLocal()
         
         # --- Upsert AI Analysis ---
         existing_analysis = db.query(AIAnalysis).filter(AIAnalysis.ticker == inputs["ticker"]).first()
@@ -59,7 +67,6 @@ def analyze_stock(request: AnalyzeRequest):
             
         # Commit all changes to the database at once
         db.commit()
-        db.close()
         
         # 3. Return the JSON to the user
         return final_json
@@ -69,9 +76,8 @@ def analyze_stock(request: AnalyzeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/history/{ticker}")
-def get_stock_history(ticker: str):
+async def get_stock_history(ticker: str, db: Session = Depends(get_db)): # <--- Async & DB Injection
     """Retrieves all historical AI analyses for a specific stock ticker."""
-    db = SessionLocal()
     try:
         # Search the database for this ticker, ordering by newest first
         history = db.query(AIAnalysis).filter(
@@ -96,13 +102,10 @@ def get_stock_history(ticker: str):
     except Exception as e:
         logger.error(f"Failed to fetch history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
 
 @router.get("/news/{ticker}")
-def get_stock_news(ticker: str):
+async def get_stock_news(ticker: str, db: Session = Depends(get_db)): # <--- Async & DB Injection
     """Retrieves only the news headlines for a specific stock."""
-    db = SessionLocal()
     try:
         news_record = db.query(StockNews).filter(StockNews.ticker == ticker.upper()).first()
         
@@ -118,5 +121,3 @@ def get_stock_news(ticker: str):
     except Exception as e:
         logger.error(f"Failed to fetch news: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
