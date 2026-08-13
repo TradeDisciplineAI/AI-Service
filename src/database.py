@@ -28,3 +28,10 @@ class StockNews(Base):
 
 # CRITICAL: This MUST be at the very bottom so it creates ALL the tables defined above!
 Base.metadata.create_all(bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
