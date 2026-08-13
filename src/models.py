@@ -1,6 +1,13 @@
 from typing import TypedDict, List
 from pydantic import BaseModel, Field
 
+
+class Agent1State(TypedDict):
+    ticker: str
+    market_data: str
+    final_scan_json: dict
+
+
 # The memory bucket for Agent 2's workflow
 class Agent2State(TypedDict):
     ticker: str
