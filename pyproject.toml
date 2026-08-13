@@ -15,5 +15,7 @@ dependencies = [
     "newsapi-python>=0.2.7",
     "tweepy>=4.14.0",
     "praw>=7.7.1",
-    "duckduckgo-search>=5.2.1"
+    "duckduckgo-search>=5.2.1",
+    "psycopg2-binary>=2.9",
+    "sqlalchemy>=2.0"
 ]

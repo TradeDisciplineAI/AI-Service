@@ -18,7 +18,7 @@ COPY src /app/src
 COPY .env /app/.env
 
 # Install dependencies directly into the system using uv
-RUN uv pip install --system fastapi "uvicorn[standard]" langchain langgraph langchain-google-genai pydantic python-dotenv newsapi-python tweepy praw duckduckgo-search
+RUN uv pip install --system fastapi "uvicorn[standard]" langchain langgraph langchain-google-genai pydantic python-dotenv newsapi-python tweepy praw duckduckgo-search sqlalchemy psycopg2-binary
 
 ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1

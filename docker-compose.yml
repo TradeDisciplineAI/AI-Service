@@ -11,8 +11,14 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - trading_network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+networks:
+  trading_network:
+    external: true
