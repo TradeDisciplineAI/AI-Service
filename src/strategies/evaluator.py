@@ -36,7 +36,10 @@ class StrategyEvaluator:
         rag_context: Optional[Dict[str, Any]]
     ) -> Tuple[bool, bool, ConfidenceMode, float, Dict[str, float], float, float]:
         """
-        Detects availability of Agent 2 (Sentiment) and Agent 6 (RAG) inputs.
+        Detects availability and normalizes Agent 2 (Sentiment) and Agent 6 (RAG) inputs.
+        Supports both:
+          - sentiment_score (-1.0 to +1.0 float) -> normalized via (score + 1.0) / 2.0
+          - conviction_score (1 to 10 int)      -> normalized via score / 10.0
         Returns: (has_sentiment, has_rag, mode, required_threshold, weights, norm_sentiment_score, norm_rag_score)
         """
         has_sentiment = False
@@ -47,18 +50,15 @@ class StrategyEvaluator:
             and isinstance(sentiment, dict) 
             and "error" not in sentiment
         ):
-            # Check for sentiment_score or conviction_score
-            raw_score = sentiment.get("sentiment_score")
-            if raw_score is None and "conviction_score" in sentiment:
-                # Agent 2 outputs conviction_score 1..10
-                raw_score = (sentiment["conviction_score"] / 5.0) - 1.0  # Convert 1..10 to -1.0..+1.0
-                
-            if raw_score is not None:
+            # Check for sentiment_score (-1.0 to +1.0) or conviction_score (1 to 10)
+            if "sentiment_score" in sentiment and sentiment["sentiment_score"] is not None:
                 has_sentiment = True
-                # Clamp raw sentiment to [-1.0, 1.0]
-                clamped_score = max(-1.0, min(1.0, float(raw_score)))
-                # Normalize to [0.0, 1.0]
+                clamped_score = max(-1.0, min(1.0, float(sentiment["sentiment_score"])))
                 norm_sentiment = (clamped_score + 1.0) / 2.0
+            elif "conviction_score" in sentiment and sentiment["conviction_score"] is not None:
+                has_sentiment = True
+                clamped_conviction = max(0.0, min(10.0, float(sentiment["conviction_score"])))
+                norm_sentiment = clamped_conviction / 10.0
 
         has_rag = False
         norm_rag = 0.50  # Neutral fallback

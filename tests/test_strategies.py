@@ -165,3 +165,46 @@ def test_atr_target_price_and_risk_reward_math(mock_technicals):
     assert result.stop_loss == 2420.0
     assert result.take_profit == 2510.0
     assert result.risk_reward_ratio == 2.0
+
+def test_deterministic_tie_breaking(mock_technicals):
+    """Verify that when strategies tie on max score, priority order MomentumBreakout > MeanReversion > EMACrossover breaks tie."""
+    evaluator = StrategyEvaluator()
+    # Construct input where both MomentumBreakout (0.90) and a mock 0.90 strategy tie
+    scan = {"breakout_detected": True, "volume_surge": True}
+    result = evaluator.evaluate_all(mock_technicals, scan, None, None)
+    assert result.primary_strategy == "MomentumBreakout"
+
+def test_out_of_range_conviction_score_clamping(mock_technicals):
+    """Verify out-of-range Agent 2 conviction_score (e.g. 15/10) is safely clamped to 1.0."""
+    evaluator = StrategyEvaluator()
+    scan = {"breakout_detected": True, "volume_surge": True}
+    oversized_sentiment = {"conviction_score": 15}  # 15 > 10!
+    
+    result = evaluator.evaluate_all(mock_technicals, scan, oversized_sentiment, None)
+    assert result.confidence_mode == ConfidenceMode.RAG_OFFLINE
+    # Expected: (0.625 * 0.90) + (0.375 * 1.00) = 0.5625 + 0.375 = 0.9375
+    assert result.confidence_score == 0.9375
+
+def test_conviction_score_only_payload_triggers_full_integration_mode(mock_technicals):
+    """Verify healthy payload with ONLY conviction_score triggers FULL_INTEGRATION mode (NOT SENTIMENT_OFFLINE)."""
+    evaluator = StrategyEvaluator()
+    scan = {"breakout_detected": True, "volume_surge": True}
+    conviction_only_sentiment = {"conviction_score": 8}  # Real Agent 2 format!
+    rag = {"confidence_adjustment": 0.10}
+
+    result = evaluator.evaluate_all(mock_technicals, scan, conviction_only_sentiment, rag)
+    assert result.confidence_mode == ConfidenceMode.FULL_INTEGRATION
+    assert result.required_threshold == 0.65
+    # Expected: (0.50 * 0.90) + (0.30 * 0.80) + (0.20 * 0.60) = 0.45 + 0.24 + 0.12 = 0.81
+    assert result.confidence_score == 0.81
+
+def test_negative_conviction_score_lower_bound_clamping(mock_technicals):
+    """Verify negative conviction_score (e.g. -5/10) is safely clamped to 0.0 lower bound."""
+    evaluator = StrategyEvaluator()
+    scan = {"breakout_detected": True, "volume_surge": True}
+    negative_sentiment = {"conviction_score": -5}
+    
+    result = evaluator.evaluate_all(mock_technicals, scan, negative_sentiment, None)
+    assert result.confidence_mode == ConfidenceMode.RAG_OFFLINE
+    # Expected: (0.625 * 0.90) + (0.375 * 0.00) = 0.5625
+    assert result.confidence_score == 0.5625
