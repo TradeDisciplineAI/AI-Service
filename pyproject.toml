@@ -1,0 +1,27 @@
+[project]
+name = "agent2-service"
+version = "0.1.0"
+description = "News & Sentiment Analyzer Agent"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "langchain>=0.1.13",
+    "langgraph>=0.0.30",
+    "langchain-google-genai>=1.0.1",
+    "pydantic>=2.6.4",
+    "python-dotenv>=1.0.1",
+    "newsapi-python>=0.2.7",
+    "tweepy>=4.14.0",
+    "praw>=7.7.1",
+    "duckduckgo-search>=5.2.1",
+    "psycopg2-binary>=2.9",
+    "sqlalchemy>=2.0",
+    "pandas>=2.2.0",
+    "pandas-ta>=0.3.14b0",
+    "numpy>=1.26.0",
+    "pydantic-settings>=2.4.0",
+    "pytest>=8.0.0",
+    "yfinance>=0.2.35"
+]
