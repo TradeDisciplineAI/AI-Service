@@ -6,6 +6,13 @@ from pydantic import BaseModel, Field
 class AnalyzeRequest(BaseModel):
     ticker: str
 
+# Agent 3 Master REST Request Blueprint
+class Agent3EvaluateRequest(BaseModel):
+    ticker: str = Field(description="Stock or Crypto symbol e.g., 'RELIANCE'")
+    market_scan_json: Optional[Dict[str, Any]] = Field(default=None, description="Optional pre-fetched candles or Agent 1 scan output")
+    sentiment_analysis_json: Optional[Dict[str, Any]] = Field(default=None, description="Optional pre-fetched Agent 2 sentiment analysis")
+    rag_context_json: Optional[Dict[str, Any]] = Field(default=None, description="Optional pre-fetched Agent 6 RAG context")
+
 # Candle Blueprint
 class OHLCVCandle(BaseModel):
     timestamp: str
