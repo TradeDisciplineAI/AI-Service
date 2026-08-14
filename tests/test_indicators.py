@@ -111,7 +111,7 @@ def test_performance_benchmark_under_five_milliseconds():
     symbol = "BENCHMARK"
     candles = [
         {
-            "timestamp": f"10:{i:02d}",
+            "timestamp": f"2026-08-14T10:{i//60:02d}:{i%60:02d}Z",
             "open": 100.0 + i,
             "high": 102.0 + i,
             "low": 98.0 + i,
