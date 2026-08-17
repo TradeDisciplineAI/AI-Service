@@ -112,8 +112,8 @@ class QdrantTradeVectorStore:
         Explicitly constructs a rich text string representation from TradeExecutionRecord fields.
         
         Field Details:
-        - `outcome` is a derived string ("WIN" if pnl > 0 else "LOSS" if pnl < 0 else "BREAKEVEN")
-          computed directly from `record.pnl`.
+        - `outcome` is a derived string ("WIN", "LOSS", or "BREAKEVEN"). Uses epsilon tolerance (abs(pnl) < 1e-5)
+          to prevent floating-point representation artifacts (e.g. 0.0000000000000001) from misclassifying flat trades.
         - `emotion_note` is conditionally appended only if present. If `record.emotion_note` is None or empty,
           the " | Market Note: ..." segment is omitted completely to prevent stringified "None" vector pollution.
           
@@ -121,8 +121,13 @@ class QdrantTradeVectorStore:
         When a trade is updated (e.g. initial entry -> exit/PnL filled), store_trade() re-embeds the updated
         text representation so the vector accurately reflects the complete trade outcome in semantic space.
         """
-        # Derived outcome calculated from record.pnl
-        outcome = "WIN" if record.pnl > 0 else ("LOSS" if record.pnl < 0 else "BREAKEVEN")
+        # Epsilon-based outcome calculation robust against float precision artifacts
+        if abs(record.pnl) < 1e-5:
+            outcome = "BREAKEVEN"
+        elif record.pnl > 0:
+            outcome = "WIN"
+        else:
+            outcome = "LOSS"
         
         base_text = (
             f"Symbol: {record.symbol.upper()} | Action: {record.action.value} | Strategy: {record.strategy_used} | "

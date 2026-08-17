@@ -41,12 +41,33 @@ def test_init_collection_idempotent_double_call(memory_vector_store):
     memory_vector_store.init_collection()
     assert memory_vector_store.count_trades() == 1
 
-def test_record_to_text_formatting_happy_path(memory_vector_store):
+def test_record_to_text_outcome_win(memory_vector_store):
     """
-    Verifies record_to_text explicitly formats derived outcome and includes Market Note when present.
+    Verifies record_to_text correctly identifies positive PnL as WIN outcome.
     """
     record = TradeExecutionRecord(
-        trade_id="TRD-TEXT-SPEC",
+        trade_id="TRD-WIN-1",
+        symbol="RELIANCE",
+        action=SignalAction.BUY,
+        entry_price=2450.0,
+        exit_price=2500.0,
+        pnl=500.0,
+        pnl_percentage=2.04,
+        strategy_used="MomentumBreakout",
+        emotion_note="Good breakout entry",
+        timestamp="2026-08-17T09:30:00Z"
+    )
+    formatted = memory_vector_store.record_to_text(record)
+    assert "Outcome: WIN" in formatted
+    assert "PnL: 500.00 (2.04%)" in formatted
+    assert "Market Note: Good breakout entry" in formatted
+
+def test_record_to_text_outcome_loss(memory_vector_store):
+    """
+    Verifies record_to_text correctly identifies negative PnL as LOSS outcome.
+    """
+    record = TradeExecutionRecord(
+        trade_id="TRD-LOSS-1",
         symbol="RELIANCE",
         action=SignalAction.BUY,
         entry_price=2450.0,
@@ -58,12 +79,41 @@ def test_record_to_text_formatting_happy_path(memory_vector_store):
         timestamp="2026-08-17T09:30:00Z"
     )
     formatted = memory_vector_store.record_to_text(record)
-    assert "Symbol: RELIANCE" in formatted
-    assert "Action: BUY" in formatted
-    assert "Strategy: MomentumBreakout" in formatted
     assert "Outcome: LOSS" in formatted
     assert "PnL: -300.00 (-1.22%)" in formatted
     assert "Market Note: Panic sell on red candle spike" in formatted
+
+def test_record_to_text_outcome_breakeven_exact_and_epsilon(memory_vector_store):
+    """
+    Verifies record_to_text uses float epsilon (abs(pnl) < 1e-5) to classify exact zero and float artifact values as BREAKEVEN.
+    """
+    # Exact zero PnL
+    record_exact = TradeExecutionRecord(
+        trade_id="TRD-BE-EXACT",
+        symbol="TATASTEEL",
+        action=SignalAction.BUY,
+        entry_price=150.0,
+        exit_price=150.0,
+        pnl=0.0,
+        pnl_percentage=0.0,
+        strategy_used="EMACrossover",
+        timestamp="2026-08-17T09:35:00Z"
+    )
+    assert "Outcome: BREAKEVEN" in memory_vector_store.record_to_text(record_exact)
+
+    # Floating point calculation precision artifact (e.g., 0.0000000000000001)
+    record_float_artifact = TradeExecutionRecord(
+        trade_id="TRD-BE-ARTIFACT",
+        symbol="TATASTEEL",
+        action=SignalAction.BUY,
+        entry_price=150.0,
+        exit_price=150.0,
+        pnl=1e-8,  # 0.00000001 float artifact
+        pnl_percentage=0.0,
+        strategy_used="EMACrossover",
+        timestamp="2026-08-17T09:35:00Z"
+    )
+    assert "Outcome: BREAKEVEN" in memory_vector_store.record_to_text(record_float_artifact)
 
 def test_record_to_text_formatting_none_emotion_note(memory_vector_store):
     """
