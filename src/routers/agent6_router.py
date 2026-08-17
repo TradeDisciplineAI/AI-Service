@@ -1,5 +1,6 @@
 import logging
-from fastapi import APIRouter, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, HTTPException, status, Depends
 from src.schemas import TradeExecutionRecord, RAGIngestResponse, RAGQueryRequest, RAGContextResponse
 from src.rag.vector_store import QdrantTradeVectorStore, RAGStorageError
 from src.rag.evaluator import RAGEvaluator
@@ -8,20 +9,44 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent6", tags=["Agent 6 RAG Engine"])
 
-# Initialize storage and evaluator singletons
-vector_store = QdrantTradeVectorStore()
-evaluator = RAGEvaluator(vector_store=vector_store)
+# Module-level singletons (lazy initialization)
+_vector_store: Optional[QdrantTradeVectorStore] = None
+_evaluator: Optional[RAGEvaluator] = None
+
+
+def get_vector_store() -> QdrantTradeVectorStore:
+    """
+    Returns or lazily initializes the QdrantTradeVectorStore singleton.
+    Allows dependency overrides in unit testing environments.
+    """
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = QdrantTradeVectorStore()
+    return _vector_store
+
+
+def get_evaluator(store: QdrantTradeVectorStore = Depends(get_vector_store)) -> RAGEvaluator:
+    """
+    Returns or lazily initializes the RAGEvaluator singleton.
+    """
+    global _evaluator
+    if _evaluator is None or _evaluator.vector_store != store:
+        _evaluator = RAGEvaluator(vector_store=store)
+    return _evaluator
 
 
 @router.post("/ingest", response_model=RAGIngestResponse, status_code=status.HTTP_201_CREATED)
-def ingest_trade(record: TradeExecutionRecord):
+def ingest_trade(
+    record: TradeExecutionRecord,
+    store: QdrantTradeVectorStore = Depends(get_vector_store)
+):
     """
     Ingests a completed trade execution fill record into Qdrant Vector DB memory.
     Catches RAGStorageError and raises HTTP 503 Service Unavailable cleanly.
     """
     try:
-        response = vector_store.store_trade(record)
-        return response
+        vector_id = store.store_trade(record)
+        return RAGIngestResponse(status="stored", trade_id=record.trade_id, vector_id=vector_id)
     except RAGStorageError as e:
         logger.error(f"Storage failure ingesting trade '{record.trade_id}': {e}")
         raise HTTPException(
@@ -37,14 +62,17 @@ def ingest_trade(record: TradeExecutionRecord):
 
 
 @router.post("/evaluate", response_model=RAGContextResponse, status_code=status.HTTP_200_OK)
-def evaluate_trade_setup(request: RAGQueryRequest):
+def evaluate_trade_setup(
+    request: RAGQueryRequest,
+    ev: RAGEvaluator = Depends(get_evaluator)
+):
     """
     Evaluates a setup memory request for Agent 3:
     Retrieves recent trade history, detects behavioral discipline mistakes,
     queries vector memory for similar historical setups, and computes a bounded confidence adjustment.
     """
     try:
-        response = evaluator.evaluate_setup(request)
+        response = ev.evaluate_setup(request)
         return response
     except Exception as e:
         logger.error(f"Unexpected error evaluating setup for '{request.symbol}': {e}")
