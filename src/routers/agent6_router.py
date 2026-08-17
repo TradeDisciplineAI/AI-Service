@@ -70,10 +70,17 @@ def evaluate_trade_setup(
     Evaluates a setup memory request for Agent 3:
     Retrieves recent trade history, detects behavioral discipline mistakes,
     queries vector memory for similar historical setups, and computes a bounded confidence adjustment.
+    Catches RAGStorageError and raises HTTP 503 Service Unavailable cleanly.
     """
     try:
         response = ev.evaluate_setup(request)
         return response
+    except RAGStorageError as e:
+        logger.error(f"Storage failure evaluating setup for '{request.symbol}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Qdrant Vector DB Storage Unavailable: {str(e)}"
+        )
     except Exception as e:
         logger.error(f"Unexpected error evaluating setup for '{request.symbol}': {e}")
         raise HTTPException(

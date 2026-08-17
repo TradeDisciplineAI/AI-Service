@@ -95,3 +95,26 @@ def test_agent6_evaluate_endpoint_success():
     assert data["symbol"] == "RELIANCE"
     assert "confidence_adjustment" in data
     assert "historical_win_rate" in data
+
+
+def test_agent6_evaluate_endpoint_503_on_rag_storage_error():
+    """
+    Verifies POST /agent6/evaluate catches RAGStorageError and raises HTTP 503 Service Unavailable cleanly.
+    """
+    payload = {
+        "symbol": "RELIANCE",
+        "current_price": 2450.0,
+        "rsi": 55.0,
+        "price_change_pct_24h": 1.0,
+        "strategy": "MomentumBreakout",
+        "timestamp": "2026-08-17T10:00:00Z"
+    }
+
+    mock_evaluator = MagicMock()
+    mock_evaluator.evaluate_setup.side_effect = RAGStorageError("Qdrant cluster offline")
+    app.dependency_overrides[get_evaluator] = lambda: mock_evaluator
+
+    res = client.post("/agent6/evaluate", json=payload)
+    assert res.status_code == 503
+    data = res.json()
+    assert "Qdrant Vector DB Storage Unavailable" in data["detail"]
