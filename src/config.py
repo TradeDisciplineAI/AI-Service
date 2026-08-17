@@ -17,4 +17,14 @@ class IndicatorSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+class RAGSettings(BaseSettings):
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333
+    QDRANT_COLLECTION: str = "trade_history"
+    EMBEDDING_VECTOR_SIZE: int = 384
+    QDRANT_API_KEY: str = ""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
 indicator_settings = IndicatorSettings()
+rag_settings = RAGSettings()

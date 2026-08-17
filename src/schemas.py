@@ -87,3 +87,22 @@ class TradeSignal(BaseModel):
     primary_strategy: str
     reasons: List[str] = Field(default_factory=list)
     technicals_summary: Dict[str, Any] = Field(default_factory=dict)
+
+# === AGENT 6: LEARNING AGENT / RAG SCHEMAS ===
+
+class TradeExecutionRecord(BaseModel):
+    trade_id: str = Field(description="Unique trade UUID e.g., 'TRD-98124'")
+    symbol: str = Field(description="Stock or Crypto symbol e.g., 'RELIANCE'")
+    action: SignalAction = Field(description="Action BUY or SELL")
+    entry_price: float = Field(gt=0.0, description="Actual entry fill price")
+    exit_price: float = Field(gt=0.0, description="Actual exit fill price")
+    pnl: float = Field(description="Realized PnL amount in currency")
+    pnl_percentage: float = Field(description="Realized PnL percentage e.g., 5.2 or -2.1")
+    strategy_used: str = Field(description="Strategy name e.g., 'MomentumBreakout'")
+    emotion_note: Optional[str] = Field(default=None, description="Optional trader note or mistake flag e.g., 'FOMO buy after spike'")
+    timestamp: str = Field(description="ISO timestamp of trade completion")
+
+class RAGIngestResponse(BaseModel):
+    status: str = Field(default="stored", description="Ingestion status e.g. 'stored'")
+    trade_id: str = Field(description="Trade ID stored")
+    vector_id: str = Field(description="Qdrant point ID")
