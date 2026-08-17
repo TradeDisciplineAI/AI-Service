@@ -21,6 +21,7 @@ class RAGSettings(BaseSettings):
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
     QDRANT_COLLECTION: str = "trade_history"
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_VECTOR_SIZE: int = 384
     QDRANT_API_KEY: str = ""
 

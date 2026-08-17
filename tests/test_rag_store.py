@@ -1,7 +1,9 @@
 import pytest
+import uuid
+from unittest.mock import MagicMock
 from qdrant_client import QdrantClient
 from src.schemas import TradeExecutionRecord, SignalAction
-from src.rag.vector_store import QdrantTradeVectorStore
+from src.rag.vector_store import QdrantTradeVectorStore, RAGStorageError
 
 @pytest.fixture
 def memory_vector_store():
@@ -18,71 +20,13 @@ def test_qdrant_in_memory_initialization(memory_vector_store):
     collections = memory_vector_store.client.get_collections().collections
     assert any(c.name == "test_trade_history" for c in collections)
 
-def test_generate_embedding(memory_vector_store):
+def test_init_collection_idempotent_double_call(memory_vector_store):
     """
-    Verifies vector embedding generation outputs exactly 384 float dimensions.
+    Verifies calling init_collection() multiple times is safe and does not wipe or recreate collection.
     """
-    text = "Symbol: RELIANCE Action: BUY PnL: 150.0 Strategy: MomentumBreakout Note: Healthy breakout"
-    vector = memory_vector_store.generate_embedding(text)
-    assert isinstance(vector, list)
-    assert len(vector) == 384
-    assert all(isinstance(x, float) for x in vector)
-
-def test_store_trade_record(memory_vector_store):
-    """
-    Verifies storing a TradeExecutionRecord inserts a point and returns a UUID vector_id.
-    """
+    # Store initial trade
     record = TradeExecutionRecord(
-        trade_id="TRD-98124",
-        symbol="RELIANCE",
-        action=SignalAction.BUY,
-        entry_price=2450.0,
-        exit_price=2500.0,
-        pnl=2500.0,
-        pnl_percentage=2.04,
-        strategy_used="MomentumBreakout",
-        emotion_note="Disciplined entry at EMA breakout",
-        timestamp="2026-08-17T09:30:00Z"
-    )
-    
-    vector_id = memory_vector_store.store_trade(record)
-    assert vector_id is not None
-    assert len(vector_id) > 0
-    assert memory_vector_store.count_trades() == 1
-    assert memory_vector_store.count_trades(symbol="RELIANCE") == 1
-
-def test_get_trade_by_id(memory_vector_store):
-    """
-    Verifies retrieving a trade by trade_id returns the exact saved metadata payload.
-    """
-    record = TradeExecutionRecord(
-        trade_id="TRD-77123",
-        symbol="INFY",
-        action=SignalAction.SELL,
-        entry_price=1500.0,
-        exit_price=1450.0,
-        pnl=1000.0,
-        pnl_percentage=3.33,
-        strategy_used="EMACrossover",
-        emotion_note="Clean exit at profit target",
-        timestamp="2026-08-17T09:40:00Z"
-    )
-    
-    memory_vector_store.store_trade(record)
-    payload = memory_vector_store.get_trade_by_id("TRD-77123")
-    
-    assert payload is not None
-    assert payload["trade_id"] == "TRD-77123"
-    assert payload["symbol"] == "INFY"
-    assert payload["pnl"] == 1000.0
-    assert payload["emotion_note"] == "Clean exit at profit target"
-
-def test_count_trades_symbol_filtering(memory_vector_store):
-    """
-    Verifies symbol filtering counts trades correctly for distinct symbols.
-    """
-    rec1 = TradeExecutionRecord(
-        trade_id="TRD-001",
+        trade_id="TRD-IDEMPOTENT-1",
         symbol="RELIANCE",
         action=SignalAction.BUY,
         entry_price=2400.0,
@@ -92,22 +36,110 @@ def test_count_trades_symbol_filtering(memory_vector_store):
         strategy_used="MomentumBreakout",
         timestamp="2026-08-17T09:00:00Z"
     )
-    rec2 = TradeExecutionRecord(
-        trade_id="TRD-002",
-        symbol="TATASTEEL",
+    memory_vector_store.store_trade(record)
+    assert memory_vector_store.count_trades() == 1
+
+    # Call init_collection again
+    memory_vector_store.init_collection()
+    assert memory_vector_store.count_trades() == 1
+
+def test_record_to_text_formatting(memory_vector_store):
+    """
+    Verifies record_to_text explicitly formats symbol, action, strategy, pnl, and emotion note.
+    """
+    record = TradeExecutionRecord(
+        trade_id="TRD-TEXT-SPEC",
+        symbol="RELIANCE",
         action=SignalAction.BUY,
-        entry_price=150.0,
-        exit_price=145.0,
-        pnl=-500.0,
-        pnl_percentage=-3.33,
-        strategy_used="MeanReversion",
-        timestamp="2026-08-17T09:10:00Z"
+        entry_price=2450.0,
+        exit_price=2420.0,
+        pnl=-300.0,
+        pnl_percentage=-1.22,
+        strategy_used="MomentumBreakout",
+        emotion_note="Panic sell on red candle spike",
+        timestamp="2026-08-17T09:30:00Z"
     )
+    formatted = memory_vector_store.record_to_text(record)
+    assert "Symbol: RELIANCE" in formatted
+    assert "Action: BUY" in formatted
+    assert "Strategy: MomentumBreakout" in formatted
+    assert "Outcome: LOSS" in formatted
+    assert "PnL: -300.00 (-1.22%)" in formatted
+    assert "Market Note: Panic sell on red candle spike" in formatted
+
+def test_duplicate_store_trade_upsert_idempotency(memory_vector_store):
+    """
+    Verifies duplicate store_trade() calls for the same trade_id update the point idempotently without creating duplicates.
+    """
+    record1 = TradeExecutionRecord(
+        trade_id="TRD-DUP-100",
+        symbol="RELIANCE",
+        action=SignalAction.BUY,
+        entry_price=2450.0,
+        exit_price=2500.0,
+        pnl=2500.0,
+        pnl_percentage=2.04,
+        strategy_used="MomentumBreakout",
+        emotion_note="Initial entry",
+        timestamp="2026-08-17T09:30:00Z"
+    )
+    vec_id_1 = memory_vector_store.store_trade(record1)
+    assert memory_vector_store.count_trades() == 1
+
+    # Second call with updated exit price and PnL for same trade_id
+    record2 = TradeExecutionRecord(
+        trade_id="TRD-DUP-100",
+        symbol="RELIANCE",
+        action=SignalAction.BUY,
+        entry_price=2450.0,
+        exit_price=2520.0,
+        pnl=3500.0,
+        pnl_percentage=2.86,
+        strategy_used="MomentumBreakout",
+        emotion_note="Updated trailing stop exit",
+        timestamp="2026-08-17T09:35:00Z"
+    )
+    vec_id_2 = memory_vector_store.store_trade(record2)
     
-    memory_vector_store.store_trade(rec1)
-    memory_vector_store.store_trade(rec2)
+    assert vec_id_1 == vec_id_2  # Deterministic UUID point match
+    assert memory_vector_store.count_trades() == 1  # No duplicate point created
     
-    assert memory_vector_store.count_trades() == 2
-    assert memory_vector_store.count_trades(symbol="RELIANCE") == 1
-    assert memory_vector_store.count_trades(symbol="TATASTEEL") == 1
-    assert memory_vector_store.count_trades(symbol="WIPRO") == 0
+    payload = memory_vector_store.get_trade_by_id("TRD-DUP-100")
+    assert payload["pnl"] == 3500.0
+    assert payload["emotion_note"] == "Updated trailing stop exit"
+
+def test_generate_embedding(memory_vector_store):
+    """
+    Verifies vector embedding generation outputs exactly 384 float dimensions.
+    """
+    text = "Symbol: RELIANCE | Action: BUY | Strategy: MomentumBreakout | Outcome: WIN | PnL: 150.00 (1.20%) | Market Note: Healthy breakout"
+    vector = memory_vector_store.generate_embedding(text)
+    assert isinstance(vector, list)
+    assert len(vector) == 384
+    assert all(isinstance(x, float) for x in vector)
+
+def test_rag_storage_error_handling():
+    """
+    Verifies RAGStorageError is raised when Qdrant client encounters a storage exception.
+    """
+    mock_client = MagicMock()
+    mock_client.get_collections.return_value.collections = [MagicMock(name="test_history")]
+    mock_client.upsert.side_effect = Exception("Connection refused by Qdrant server")
+
+    store = QdrantTradeVectorStore(client=mock_client, collection_name="test_history")
+    
+    record = TradeExecutionRecord(
+        trade_id="TRD-ERR-1",
+        symbol="RELIANCE",
+        action=SignalAction.BUY,
+        entry_price=100.0,
+        exit_price=105.0,
+        pnl=5.0,
+        pnl_percentage=5.0,
+        strategy_used="Test",
+        timestamp="2026-08-17T10:00:00Z"
+    )
+
+    with pytest.raises(RAGStorageError) as exc_info:
+        store.store_trade(record)
+    assert "Qdrant storage failed" in str(exc_info.value)

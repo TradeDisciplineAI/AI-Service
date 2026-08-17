@@ -10,12 +10,17 @@ from src.schemas import TradeExecutionRecord
 
 logger = logging.getLogger(__name__)
 
-# Attempt fastembed import, fallback to deterministic hash vectorizer if model download fails or offline
+# Attempt fastembed import
 try:
     from fastembed import TextEmbedding
     _FASTEMBED_AVAILABLE = True
 except ImportError:
     _FASTEMBED_AVAILABLE = False
+
+
+class RAGStorageError(Exception):
+    """Raised when Qdrant storage operations fail due to network or connection errors."""
+    pass
 
 
 class QdrantTradeVectorStore:
@@ -27,6 +32,8 @@ class QdrantTradeVectorStore:
     def __init__(self, client: Optional[QdrantClient] = None, collection_name: Optional[str] = None):
         self.collection_name = collection_name or rag_settings.QDRANT_COLLECTION
         self.vector_size = rag_settings.EMBEDDING_VECTOR_SIZE
+        self.model_name = rag_settings.EMBEDDING_MODEL_NAME
+        self.using_fallback: bool = False
 
         if client is not None:
             self.client = client
@@ -34,22 +41,34 @@ class QdrantTradeVectorStore:
             try:
                 self.client = QdrantClient(host=rag_settings.QDRANT_HOST, port=rag_settings.QDRANT_PORT)
             except Exception as e:
-                logger.warning(f"Could not connect to Qdrant host at {rag_settings.QDRANT_HOST}:{rag_settings.QDRANT_PORT}. Falling back to in-memory mode: {e}")
+                logger.critical(f"CRITICAL: Could not connect to Qdrant host at {rag_settings.QDRANT_HOST}:{rag_settings.QDRANT_PORT}. Falling back to in-memory mode: {e}")
                 self.client = QdrantClient(":memory:")
 
-        # Initialize Embedding Model
+        # Initialize Embedding Model with Loud Fallback Logging
         self.embed_model = None
         if _FASTEMBED_AVAILABLE:
             try:
-                self.embed_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+                self.embed_model = TextEmbedding(model_name=self.model_name)
+                logger.info(f"Successfully loaded FastEmbed semantic model '{self.model_name}' (vector size: {self.vector_size}).")
             except Exception as e:
-                logger.warning(f"Could not load FastEmbed model BAAI/bge-small-en-v1.5: {e}. Using deterministic vectorizer fallback.")
+                self.using_fallback = True
+                logger.critical(
+                    f"CRITICAL RAG FALLBACK: Failed to load FastEmbed model '{self.model_name}': {e}. "
+                    f"Fallback hashing vectorizer is ACTIVE. Semantic similarity queries will be degraded."
+                )
+        else:
+            self.using_fallback = True
+            logger.critical(
+                "CRITICAL RAG FALLBACK: fastembed package is not installed. "
+                "Fallback hashing vectorizer is ACTIVE. Semantic similarity queries will be degraded."
+            )
 
         self.init_collection()
 
     def init_collection(self) -> None:
         """
         Ensures the target Qdrant vector collection exists with Cosine similarity metric.
+        Safe and idempotent across service restarts.
         """
         try:
             collections = self.client.get_collections().collections
@@ -60,23 +79,25 @@ class QdrantTradeVectorStore:
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(size=self.vector_size, distance=Distance.COSINE)
                 )
+            else:
+                logger.info(f"Qdrant collection '{self.collection_name}' already exists. Skipping creation.")
         except Exception as e:
             logger.error(f"Error initializing Qdrant collection '{self.collection_name}': {e}")
-            raise e
+            raise RAGStorageError(f"Failed to initialize Qdrant collection: {str(e)}") from e
 
     def generate_embedding(self, text: str) -> List[float]:
         """
-        Generates a 384-dimensional dense vector embedding for the input text string.
-        Uses FastEmbed if loaded, else uses normalized hashing vectorizer fallback.
+        Generates a 384-dimensional dense vector embedding for input text.
+        Uses FastEmbed semantic embedding model if available, else uses normalized hashing vectorizer fallback with CRITICAL logging.
         """
-        if self.embed_model is not None:
+        if self.embed_model is not None and not self.using_fallback:
             try:
                 embeddings = list(self.embed_model.embed([text]))
                 vector = list(embeddings[0])
                 if len(vector) == self.vector_size:
                     return [float(x) for x in vector]
             except Exception as e:
-                logger.warning(f"FastEmbed embedding generation failed: {e}. Using deterministic fallback vectorizer.")
+                logger.critical(f"CRITICAL RAG RETRIEVAL FAILURE: FastEmbed runtime error: {e}. Falling back to hashing vectorizer.")
 
         # Deterministic 384-dim normalized hashing fallback vectorizer
         seed = hashlib.sha256(text.encode("utf-8")).digest()
@@ -88,23 +109,32 @@ class QdrantTradeVectorStore:
 
     def record_to_text(self, record: TradeExecutionRecord) -> str:
         """
-        Converts a TradeExecutionRecord into a rich text string for dense vector embedding.
+        Explicitly constructs a rich text string representation from TradeExecutionRecord fields.
+        Format:
+        'Symbol: {symbol} | Action: {action} | Strategy: {strategy_used} | Outcome: {outcome} | PnL: {pnl:.2f} ({pnl_percentage:.2f}%) | Market Note: {emotion_note}'
         """
         outcome = "WIN" if record.pnl > 0 else ("LOSS" if record.pnl < 0 else "BREAKEVEN")
-        note = f" Note: {record.emotion_note}" if record.emotion_note else ""
+        note = record.emotion_note.strip() if record.emotion_note else "None"
         return (
-            f"Symbol: {record.symbol.upper()} Action: {record.action} Outcome: {outcome} "
-            f"PnL: {record.pnl:.2f} ({record.pnl_percentage:.2f}%) Strategy: {record.strategy_used}{note}"
+            f"Symbol: {record.symbol.upper()} | Action: {record.action.value} | Strategy: {record.strategy_used} | "
+            f"Outcome: {outcome} | PnL: {record.pnl:.2f} ({record.pnl_percentage:.2f}%) | Market Note: {note}"
         )
+
+    def get_vector_id_for_trade(self, trade_id: str) -> str:
+        """
+        Generates a deterministic Qdrant point UUID derived from trade_id.
+        Ensures duplicate store_trade() calls for the same trade_id perform an idempotent upsert.
+        """
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, trade_id))
 
     def store_trade(self, record: TradeExecutionRecord) -> str:
         """
         Stores a completed trade execution record into Qdrant.
-        Returns the generated Qdrant Point UUID string.
+        Uses deterministic point ID so re-storing identical trade_id updates the point idempotently.
         """
         text_repr = self.record_to_text(record)
         vector = self.generate_embedding(text_repr)
-        vector_id = str(uuid.uuid4())
+        vector_id = self.get_vector_id_for_trade(record.trade_id)
 
         payload = record.model_dump()
         payload["text_repr"] = text_repr
@@ -115,12 +145,16 @@ class QdrantTradeVectorStore:
             payload=payload
         )
 
-        self.client.upsert(
-            collection_name=self.collection_name,
-            points=[point]
-        )
-        logger.info(f"Stored trade execution '{record.trade_id}' in Qdrant with point_id '{vector_id}'.")
-        return vector_id
+        try:
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=[point]
+            )
+            logger.info(f"Stored trade execution '{record.trade_id}' in Qdrant with point_id '{vector_id}'.")
+            return vector_id
+        except Exception as e:
+            logger.error(f"Failed to store trade '{record.trade_id}' in Qdrant: {e}")
+            raise RAGStorageError(f"Qdrant storage failed for trade '{record.trade_id}': {str(e)}") from e
 
     def get_trade_by_id(self, trade_id: str) -> Optional[Dict[str, Any]]:
         """
