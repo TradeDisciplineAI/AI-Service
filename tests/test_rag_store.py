@@ -24,7 +24,6 @@ def test_init_collection_idempotent_double_call(memory_vector_store):
     """
     Verifies calling init_collection() multiple times is safe and does not wipe or recreate collection.
     """
-    # Store initial trade
     record = TradeExecutionRecord(
         trade_id="TRD-IDEMPOTENT-1",
         symbol="RELIANCE",
@@ -39,13 +38,12 @@ def test_init_collection_idempotent_double_call(memory_vector_store):
     memory_vector_store.store_trade(record)
     assert memory_vector_store.count_trades() == 1
 
-    # Call init_collection again
     memory_vector_store.init_collection()
     assert memory_vector_store.count_trades() == 1
 
-def test_record_to_text_formatting(memory_vector_store):
+def test_record_to_text_formatting_happy_path(memory_vector_store):
     """
-    Verifies record_to_text explicitly formats symbol, action, strategy, pnl, and emotion note.
+    Verifies record_to_text explicitly formats derived outcome and includes Market Note when present.
     """
     record = TradeExecutionRecord(
         trade_id="TRD-TEXT-SPEC",
@@ -67,6 +65,31 @@ def test_record_to_text_formatting(memory_vector_store):
     assert "PnL: -300.00 (-1.22%)" in formatted
     assert "Market Note: Panic sell on red candle spike" in formatted
 
+def test_record_to_text_formatting_none_emotion_note(memory_vector_store):
+    """
+    Verifies record_to_text completely omits Market Note when emotion_note is None, avoiding stringified 'None' vector pollution.
+    """
+    record = TradeExecutionRecord(
+        trade_id="TRD-TEXT-NONE-NOTE",
+        symbol="INFY",
+        action=SignalAction.BUY,
+        entry_price=1500.0,
+        exit_price=1550.0,
+        pnl=500.0,
+        pnl_percentage=3.33,
+        strategy_used="EMACrossover",
+        emotion_note=None,  # Explicitly None
+        timestamp="2026-08-17T09:35:00Z"
+    )
+    formatted = memory_vector_store.record_to_text(record)
+    assert "Symbol: INFY" in formatted
+    assert "Action: BUY" in formatted
+    assert "Strategy: EMACrossover" in formatted
+    assert "Outcome: WIN" in formatted
+    assert "PnL: 500.00 (3.33%)" in formatted
+    assert "Market Note" not in formatted  # Must NOT contain Market Note segment
+    assert "None" not in formatted        # Must NOT contain stringified "None"
+
 def test_duplicate_store_trade_upsert_idempotency(memory_vector_store):
     """
     Verifies duplicate store_trade() calls for the same trade_id update the point idempotently without creating duplicates.
@@ -86,7 +109,6 @@ def test_duplicate_store_trade_upsert_idempotency(memory_vector_store):
     vec_id_1 = memory_vector_store.store_trade(record1)
     assert memory_vector_store.count_trades() == 1
 
-    # Second call with updated exit price and PnL for same trade_id
     record2 = TradeExecutionRecord(
         trade_id="TRD-DUP-100",
         symbol="RELIANCE",

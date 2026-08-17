@@ -110,15 +110,30 @@ class QdrantTradeVectorStore:
     def record_to_text(self, record: TradeExecutionRecord) -> str:
         """
         Explicitly constructs a rich text string representation from TradeExecutionRecord fields.
-        Format:
-        'Symbol: {symbol} | Action: {action} | Strategy: {strategy_used} | Outcome: {outcome} | PnL: {pnl:.2f} ({pnl_percentage:.2f}%) | Market Note: {emotion_note}'
+        
+        Field Details:
+        - `outcome` is a derived string ("WIN" if pnl > 0 else "LOSS" if pnl < 0 else "BREAKEVEN")
+          computed directly from `record.pnl`.
+        - `emotion_note` is conditionally appended only if present. If `record.emotion_note` is None or empty,
+          the " | Market Note: ..." segment is omitted completely to prevent stringified "None" vector pollution.
+          
+        Lifecycle Note:
+        When a trade is updated (e.g. initial entry -> exit/PnL filled), store_trade() re-embeds the updated
+        text representation so the vector accurately reflects the complete trade outcome in semantic space.
         """
+        # Derived outcome calculated from record.pnl
         outcome = "WIN" if record.pnl > 0 else ("LOSS" if record.pnl < 0 else "BREAKEVEN")
-        note = record.emotion_note.strip() if record.emotion_note else "None"
-        return (
+        
+        base_text = (
             f"Symbol: {record.symbol.upper()} | Action: {record.action.value} | Strategy: {record.strategy_used} | "
-            f"Outcome: {outcome} | PnL: {record.pnl:.2f} ({record.pnl_percentage:.2f}%) | Market Note: {note}"
+            f"Outcome: {outcome} | PnL: {record.pnl:.2f} ({record.pnl_percentage:.2f}%)"
         )
+        
+        # Omit Market Note segment when emotion_note is None or whitespace to avoid vector space pollution
+        if record.emotion_note and record.emotion_note.strip():
+            base_text += f" | Market Note: {record.emotion_note.strip()}"
+            
+        return base_text
 
     def get_vector_id_for_trade(self, trade_id: str) -> str:
         """
