@@ -160,3 +160,32 @@ class RAGContextResponse(BaseModel):
     confidence_adjustment: float = Field(ge=-0.30, le=0.20, description="Bounded RAG confidence score adjustment")
     warning_flag: Optional[str] = Field(default=None, description="Formatted warning text string if win rate < 50% or risks active")
     mistake_flags: List[str] = Field(default_factory=list, description="List of detected behavioral risk flags e.g. ['REVENGE_TRADING_RISK']")
+
+
+# === AGENT 4: RISK EVALUATION SCHEMAS ===
+
+class RiskCheckResultSchema(BaseModel):
+    check_name: str
+    passed: bool
+    severity: str  # "CRITICAL", "HIGH", "MEDIUM", "LOW"
+    actual_value: str
+    limit_value: str
+    message: str
+
+class RiskEvaluationResponse(BaseModel):
+    id: UUID
+    proposal_id: UUID
+    decision: str  # "RISK_APPROVED", "RISK_REJECTED", "NEEDS_REVIEW"
+    risk_score: int
+    max_risk: float
+    estimated_reward: float
+    risk_reward_ratio: float
+    portfolio_exposure: float
+    checks: List[RiskCheckResultSchema]
+    reasons: List[str]
+    evaluated_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
