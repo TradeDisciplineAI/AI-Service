@@ -95,6 +95,58 @@ class StrategyEvaluator:
 
         return has_sentiment, has_rag, mode, threshold, weights, norm_sentiment, norm_rag
 
+    def calculate_target_prices(
+        self,
+        action: SignalAction,
+        entry_price: float,
+        atr: float
+    ) -> Tuple[float, float, float]:
+        """
+        Calculates stop_loss, take_profit, and risk_reward_ratio direction-aware.
+        Enforces:
+          - BUY:  stop_loss < entry_price < take_profit
+          - SELL: take_profit < entry_price < stop_loss
+        """
+        if entry_price <= 0:
+            raise ValueError("Entry price must be positive and greater than zero.")
+        if atr <= 0:
+            raise ValueError("ATR must be positive and greater than zero.")
+
+        risk_distance = round(1.5 * atr, 2)
+        if risk_distance <= 0:
+            raise ValueError("Calculated risk distance must be greater than zero.")
+
+        if action == SignalAction.SELL:
+            stop_loss = round(entry_price + risk_distance, 2)
+            risk = round(stop_loss - entry_price, 2)
+            if risk <= 0:
+                raise ValueError("Calculated risk must be greater than zero.")
+            
+            reward = round(2.0 * risk, 2)
+            take_profit = round(entry_price - reward, 2)
+            
+            # Invalid target ordering validation check
+            if not (take_profit < entry_price < stop_loss):
+                raise ValueError("Invalid target price ordering calculated for SELL signal.")
+                
+            risk_reward_ratio = round(reward / risk, 2)
+        else:  # Default to BUY
+            stop_loss = round(entry_price - risk_distance, 2)
+            risk = round(entry_price - stop_loss, 2)
+            if risk <= 0:
+                raise ValueError("Calculated risk must be greater than zero.")
+                
+            reward = round(2.0 * risk, 2)
+            take_profit = round(entry_price + reward, 2)
+
+            # Invalid target ordering validation check
+            if not (stop_loss < entry_price < take_profit):
+                raise ValueError("Invalid target price ordering calculated for BUY signal.")
+                
+            risk_reward_ratio = round(reward / risk, 2)
+
+        return stop_loss, take_profit, risk_reward_ratio
+
     def evaluate_all(
         self,
         technicals: TechnicalIndicatorsResult,
@@ -163,40 +215,52 @@ class StrategyEvaluator:
         confidence_final = max(0.0, min(1.0, round(confidence_final, 4)))
 
         # 5. Target Price Math (1.5x ATR Stop Loss & 1:2 R:R Take Profit)
+        target_action = SignalAction.BUY
         if active_signals and active_signals[0].action == SignalAction.SELL:
-            stop_loss = round(entry_price + (1.5 * atr), 2)
-            risk_amount = stop_loss - entry_price
-            if risk_amount <= 0:
-                risk_amount = max(entry_price * 0.005, 0.01)
-                stop_loss = round(entry_price + risk_amount, 2)
-
-            take_profit = round(entry_price - (2.0 * risk_amount), 2)
-            risk_reward_ratio = round((entry_price - take_profit) / risk_amount, 2) if risk_amount > 0 else 0.0
-        else:
-            stop_loss = round(entry_price - (1.5 * atr), 2)
-            risk_amount = entry_price - stop_loss
-            if risk_amount <= 0:
-                risk_amount = max(entry_price * 0.005, 0.01)
-                stop_loss = round(entry_price - risk_amount, 2)
-
-            take_profit = round(entry_price + (2.0 * risk_amount), 2)
-            risk_reward_ratio = round((take_profit - entry_price) / risk_amount, 2) if risk_amount > 0 else 0.0
+            target_action = SignalAction.SELL
+            
+        target_pricing_failed = False
+        try:
+            stop_loss, take_profit, risk_reward_ratio = self.calculate_target_prices(
+                action=target_action,
+                entry_price=entry_price,
+                atr=atr
+            )
+        except Exception as e:
+            logger.error(f"Target pricing calculation failed for {symbol}: {e}")
+            stop_loss = round(entry_price, 2)
+            take_profit = round(entry_price, 2)
+            risk_reward_ratio = 0.0
+            target_pricing_failed = True
+            reasons.append(f"Target pricing calculation failed: {str(e)}")
 
         # 6. Execution Gate (Confidence >= Threshold AND R:R >= 1.5)
         is_confidence_passed = confidence_final >= threshold
         is_rr_passed = risk_reward_ratio >= 1.5
 
-        if active_signals and is_confidence_passed and is_rr_passed:
+        if active_signals and is_confidence_passed and is_rr_passed and not target_pricing_failed:
             final_action = active_signals[0].action
             reasons.append(f"Confidence score {confidence_final:.2f} met required threshold ({threshold:.2f}) under mode {mode.value}.")
         else:
             final_action = SignalAction.HOLD
             if not active_signals:
                 reasons.append("Filtered to HOLD: No strategy triggered.")
+            elif target_pricing_failed:
+                reasons.append("Filtered to HOLD: Target pricing calculation failed.")
             elif not is_confidence_passed:
                 reasons.append(f"Filtered to HOLD: Confidence ({confidence_final:.2f}) below required threshold ({threshold:.2f}) for mode {mode.value}.")
             elif not is_rr_passed:
                 reasons.append(f"Filtered to HOLD: Risk:Reward ({risk_reward_ratio:.2f}) below 1.5 minimum limit.")
+
+        # 7. Defensive Validation / Invariant check before returning
+        if final_action == SignalAction.BUY:
+            if not (stop_loss < entry_price < take_profit):
+                final_action = SignalAction.HOLD
+                reasons.append("Filtered to HOLD: Invalid BUY target price structure detected.")
+        elif final_action == SignalAction.SELL:
+            if not (take_profit < entry_price < stop_loss):
+                final_action = SignalAction.HOLD
+                reasons.append("Filtered to HOLD: Invalid SELL target price structure detected.")
 
         signal_id = f"SIG-{uuid.uuid4().hex[:8].upper()}"
 

@@ -301,3 +301,100 @@ def test_negative_conviction_score_lower_bound_clamping(mock_technicals):
     assert result.confidence_mode == ConfidenceMode.RAG_OFFLINE
     # Expected: (0.625 * 0.90) + (0.375 * 0.00) = 0.5625
     assert result.confidence_score == 0.5625
+
+
+# ── New Agent 3 Direction-Aware Target Math Tests ──
+
+def test_buy_target_math():
+    evaluator = StrategyEvaluator()
+    # Given: entry_price = 100, atr = 2
+    sl, tp, rr = evaluator.calculate_target_prices(SignalAction.BUY, 100.0, 2.0)
+    
+    # Expected: risk_distance = 1.5 * 2 = 3
+    # stop_loss = 100 - 3 = 97
+    # take_profit = 100 + 2 * 3 = 106
+    assert sl == 97.0
+    assert tp == 106.0
+    assert sl < 100.0 < tp
+    
+    risk = 100.0 - sl
+    reward = tp - 100.0
+    assert risk == 3.0
+    assert reward == 6.0
+    assert rr == 2.0
+
+def test_sell_target_math():
+    evaluator = StrategyEvaluator()
+    # Given: entry_price = 100, atr = 2
+    sl, tp, rr = evaluator.calculate_target_prices(SignalAction.SELL, 100.0, 2.0)
+    
+    # Expected: risk_distance = 1.5 * 2 = 3
+    # stop_loss = 100 + 3 = 103
+    # take_profit = 100 - 2 * 3 = 94
+    assert sl == 103.0
+    assert tp == 94.0
+    assert tp < 100.0 < sl
+    
+    risk = sl - 100.0
+    reward = 100.0 - tp
+    assert risk == 3.0
+    assert reward == 6.0
+    assert rr == 2.0
+
+def test_buy_regression_reliance():
+    evaluator = StrategyEvaluator()
+    # Explicitly reproduce the bug entry = 1322.60, ATR = 1.32
+    sl, tp, rr = evaluator.calculate_target_prices(SignalAction.BUY, 1322.60, 1.32)
+    # The target-price calculation must NOT produce: stop_loss = 1324.58, take_profit = 1318.64
+    assert sl != 1324.58
+    assert tp != 1318.64
+    # The corrected calculation must generate: stop_loss < 1322.60 < take_profit
+    assert sl < 1322.60 < tp
+    assert sl == 1320.62
+    assert tp == 1326.56
+    assert rr == 2.0
+
+def test_sell_regression_example():
+    evaluator = StrategyEvaluator()
+    # Verify the existing SELL example remains valid: entry = 1295.60, ATR = 1.85
+    sl, tp, rr = evaluator.calculate_target_prices(SignalAction.SELL, 1295.60, 1.85)
+    assert sl == 1298.38
+    assert tp == 1290.04
+    assert tp < 1295.60 < sl
+    assert rr == 2.0
+
+def test_risk_reward_always_positive():
+    evaluator = StrategyEvaluator()
+    # Test BUY
+    sl_buy, tp_buy, rr_buy = evaluator.calculate_target_prices(SignalAction.BUY, 150.0, 4.0)
+    risk_buy = 150.0 - sl_buy
+    reward_buy = tp_buy - 150.0
+    assert risk_buy > 0
+    assert reward_buy > 0
+    assert rr_buy > 0
+
+    # Test SELL
+    sl_sell, tp_sell, rr_sell = evaluator.calculate_target_prices(SignalAction.SELL, 150.0, 4.0)
+    risk_sell = sl_sell - 150.0
+    reward_sell = 150.0 - tp_sell
+    assert risk_sell > 0
+    assert reward_sell > 0
+    assert rr_sell > 0
+
+def test_invalid_atr_and_prices():
+    evaluator = StrategyEvaluator()
+    # ATR <= 0
+    with pytest.raises(ValueError, match="ATR must be positive"):
+        evaluator.calculate_target_prices(SignalAction.BUY, 100.0, 0.0)
+    with pytest.raises(ValueError, match="ATR must be positive"):
+        evaluator.calculate_target_prices(SignalAction.BUY, 100.0, -1.0)
+        
+    # entry_price <= 0
+    with pytest.raises(ValueError, match="Entry price must be positive"):
+        evaluator.calculate_target_prices(SignalAction.BUY, 0.0, 2.0)
+    with pytest.raises(ValueError, match="Entry price must be positive"):
+        evaluator.calculate_target_prices(SignalAction.BUY, -5.0, 2.0)
+        
+    # zero risk distance (very small ATR that rounds to 0.00)
+    with pytest.raises(ValueError, match="Calculated risk distance must be greater than zero"):
+        evaluator.calculate_target_prices(SignalAction.BUY, 100.0, 0.0001)
