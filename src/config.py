@@ -29,3 +29,16 @@ class RAGSettings(BaseSettings):
 
 indicator_settings = IndicatorSettings()
 rag_settings = RAGSettings()
+
+
+class RiskSettings(BaseSettings):
+    MAX_POSITION_VALUE: float = 50000.00
+    MAX_TRADE_RISK: float = 2000.00
+    MIN_RISK_REWARD: float = 1.50
+    MAX_STOP_DISTANCE_PERCENT: float = 10.0
+    MAX_PORTFOLIO_EXPOSURE: float = 150000.00
+    MAX_SINGLE_ASSET_EXPOSURE: float = 50000.00
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+risk_settings = RiskSettings()

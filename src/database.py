@@ -1,7 +1,7 @@
 import os
 import uuid
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, text, Numeric, UUID
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, text, Numeric, UUID, ForeignKey
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime, timezone
 
 # Connect to Database
@@ -77,6 +77,52 @@ class TradeProposal(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+    risk_evaluations = relationship("RiskEvaluation", back_populates="proposal", cascade="all, delete-orphan")
+
+# Define the Risk Evaluation Table (stores multiple evaluation history records)
+class RiskEvaluation(Base):
+    __tablename__ = "risk_evaluations"
+    if schema_kwargs:
+        __table_args__ = schema_kwargs
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    proposal_id = Column(UUID(as_uuid=True), ForeignKey(TradeProposal.id, ondelete="CASCADE"), nullable=False, index=True)
+    decision = Column(String, nullable=False)
+    risk_score = Column(Integer, nullable=False)
+    max_risk = Column(Numeric(18, 4), nullable=False)
+    estimated_reward = Column(Numeric(18, 4), nullable=False)
+    risk_reward_ratio = Column(Numeric(18, 4), nullable=False)
+    portfolio_exposure = Column(Numeric(18, 4), nullable=False)
+    checks = Column(JSON, nullable=False)
+    reasons = Column(JSON, nullable=False)
+    evaluated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    proposal = relationship("TradeProposal", back_populates="risk_evaluations")
+
+# Read-only SQLAlchemy mappings for Market-Service schema
+class MarketPortfolio(Base):
+    __tablename__ = "portfolios"
+    __table_args__ = {"schema": "market"} if engine.dialect.name == "postgresql" else {}
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    type = Column(String, nullable=False, default="PAPER")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class MarketPaperPosition(Base):
+    __tablename__ = "paper_positions"
+    __table_args__ = {"schema": "market"} if engine.dialect.name == "postgresql" else {}
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    portfolio_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    symbol = Column(String, nullable=False, index=True)
+    quantity = Column(Integer, nullable=False)
+    average_entry_price = Column(Numeric(18, 4), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 # Create schema and tables logic
 if engine.dialect.name == "postgresql":
     with engine.connect() as connection:
@@ -93,3 +139,4 @@ def get_db():
         yield db
     finally:
         db.close()
+
