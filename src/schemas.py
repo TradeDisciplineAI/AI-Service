@@ -144,3 +144,19 @@ class TradeProposalResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+class RAGQueryRequest(BaseModel):
+    symbol: str = Field(description="Target stock or crypto symbol e.g., 'RELIANCE'")
+    current_price: float = Field(gt=0.0, description="Current market price")
+    rsi: float = Field(ge=0.0, le=100.0, description="Current RSI value")
+    price_change_pct_24h: float = Field(default=0.0, description="24h price change percentage e.g. 3.5")
+    strategy: str = Field(default="MomentumBreakout", description="Strategy being evaluated")
+    timestamp: str = Field(description="ISO timestamp of evaluation request")
+    recent_trades: Optional[List[TradeExecutionRecord]] = Field(default=None, description="Optional override for unit testing recent trades")
+
+class RAGContextResponse(BaseModel):
+    symbol: str = Field(description="Symbol evaluated")
+    similar_trades_count: int = Field(ge=0, description="Number of similar historical setups retrieved from Qdrant")
+    historical_win_rate: float = Field(ge=0.0, le=1.0, description="Historical win rate ratio")
+    confidence_adjustment: float = Field(ge=-0.30, le=0.20, description="Bounded RAG confidence score adjustment")
+    warning_flag: Optional[str] = Field(default=None, description="Formatted warning text string if win rate < 50% or risks active")
+    mistake_flags: List[str] = Field(default_factory=list, description="List of detected behavioral risk flags e.g. ['REVENGE_TRADING_RISK']")
