@@ -17,9 +17,11 @@ class EMACrossoverStrategy(BaseStrategy):
         ema_21 = technicals.ema.ema_21
         rsi = technicals.rsi
 
-        # Trigger conditions
         is_bullish_cross = (ema_trend == "BULLISH_CROSS") or (ema_trend == "UPTREND" and ema_9 > ema_21)
         is_sufficient_momentum = rsi >= 45.0
+
+        is_bearish_cross = (ema_trend == "BEARISH_CROSS") or (ema_trend == "DOWNTREND" and ema_9 < ema_21)
+        is_bearish_momentum = 30.0 < rsi <= 55.0
 
         if is_bullish_cross and is_sufficient_momentum:
             reason = (
@@ -29,6 +31,18 @@ class EMACrossoverStrategy(BaseStrategy):
             return StrategySignal(
                 strategy_name=self.name,
                 action=SignalAction.BUY,
+                score=0.80,
+                reason=reason
+            )
+
+        if is_bearish_cross and is_bearish_momentum:
+            reason = (
+                f"EMA Crossover (Bearish) triggered: 9 EMA ({ema_9:.2f}) < 21 EMA ({ema_21:.2f}) "
+                f"trend is {ema_trend}, RSI momentum is {rsi:.1f}."
+            )
+            return StrategySignal(
+                strategy_name=self.name,
+                action=SignalAction.SELL,
                 score=0.80,
                 reason=reason
             )

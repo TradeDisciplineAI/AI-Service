@@ -1,57 +1,91 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, text
+import uuid
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, text, Numeric, UUID
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime, timezone
 
 # Connect to Database
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    DATABASE_URL = "sqlite:///:memory:"
+    DATABASE_URL = "sqlite:////tmp/ai_service.db"
 
-engine = create_engine(DATABASE_URL)
+# Replace postgresql+asyncpg:// with postgresql:// for sync engine compatibility
+if DATABASE_URL.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+# Engine configuration
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+connect_args = {"check_same_thread": False} if IS_SQLITE else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-# Use 'ai' schema only for PostgreSQL dialect
+# Use schema only for PostgreSQL
 schema_kwargs = {"schema": "ai"} if engine.dialect.name == "postgresql" else {}
 
 # Define the Agent 1 Market Signals Table
 class MarketSignals(Base):
     __tablename__ = "market_signals"
-    __table_args__ = schema_kwargs
+    if schema_kwargs:
+        __table_args__ = schema_kwargs
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True, unique=True)
-    scan_data = Column(JSON) 
+    scan_data = Column(JSON)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 # Define the Agent 2 AI Analysis Table
 class AIAnalysis(Base):
     __tablename__ = "ai_analyses"
-    __table_args__ = schema_kwargs
+    if schema_kwargs:
+        __table_args__ = schema_kwargs
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True)
-    analysis_data = Column(JSON) 
+    analysis_data = Column(JSON)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 # Define the Agent 2 Stock News Table
 class StockNews(Base):
     __tablename__ = "stock_news"
-    __table_args__ = schema_kwargs
+    if schema_kwargs:
+        __table_args__ = schema_kwargs
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True, unique=True)
-    headlines = Column(JSON) 
+    headlines = Column(JSON)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+# Define the Trade Proposal Table
+class TradeProposal(Base):
+    __tablename__ = "trade_proposals"
+    if schema_kwargs:
+        __table_args__ = schema_kwargs
 
-# Create the 'ai' schema in PostgreSQL before creating tables
+    # Use native UUID mapping (as_uuid=True handles both SQLite and PostgreSQL)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    portfolio_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    signal_id = Column(String, nullable=False, index=True)
+    symbol = Column(String, nullable=False, index=True)
+    action = Column(String, nullable=False)
+    requested_quantity = Column(Integer, nullable=False)
+    entry_price = Column(Numeric(18, 4), nullable=False)
+    stop_loss = Column(Numeric(18, 4), nullable=False)
+    take_profit = Column(Numeric(18, 4), nullable=False)
+    confidence_score = Column(Numeric(5, 4), nullable=False)
+    primary_strategy = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="PENDING_RISK")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+# Create schema and tables logic
 if engine.dialect.name == "postgresql":
     with engine.connect() as connection:
         connection.execute(text("CREATE SCHEMA IF NOT EXISTS ai;"))
         connection.commit()
-
-# Create ALL tables
-Base.metadata.create_all(bind=engine)
+    # In production/postgresql we rely entirely on alembic migrations, DO NOT create tables here.
+else:
+    # For SQLite (unit tests), automatically create all tables
+    Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()

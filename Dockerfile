@@ -16,6 +16,8 @@ RUN addgroup --system appgroup && \
 COPY pyproject.toml ./
 COPY src /app/src
 COPY tests /app/tests
+COPY alembic.ini /app/alembic.ini
+COPY alembic /app/alembic
 
 # Install all project dependencies using uv
 RUN uv pip install --system -e .
@@ -29,5 +31,5 @@ USER appuser
 
 EXPOSE 8000
 
-# Start FastAPI from the src folder
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run Alembic migrations then start FastAPI from the src folder
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"]
