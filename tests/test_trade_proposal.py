@@ -276,3 +276,159 @@ def test_get_all_trade_proposals(db):
         assert UUID(x["user_id"])
         assert UUID(x["portfolio_id"])
 
+
+
+def test_buy_proposal_target_ordering(db):
+    """
+    Test that a valid BUY proposal target price structure (stop_loss < entry < take_profit)
+    succeeds and preserves positive R:R = 2.0.
+    """
+    user_id = str(uuid4())
+    payload = {
+        "user_id": user_id,
+        "symbol": "TSLA",
+        "action": "BUY",
+        "requested_quantity": 10,
+        "signal_id": "SIG-BUY123",
+        "entry_price": 339.34,
+        "stop_loss": 330.00,  # 330.00 < 339.34
+        "take_profit": 358.02, # 358.02 > 339.34
+        "confidence_score": 0.85,
+        "primary_strategy": "MomentumBreakout"
+    }
+    response = client.post("/trade-proposals", json=payload)
+    assert response.status_code == status.HTTP_201_CREATED
+    
+    # R:R check (358.02 - 339.34) / (339.34 - 330.00) = 18.68 / 9.34 = 2.0
+    risk = round(payload["entry_price"] - payload["stop_loss"], 2)
+    reward = round(payload["take_profit"] - payload["entry_price"], 2)
+    assert round(reward / risk, 1) == 2.0
+
+def test_sell_proposal_target_ordering(db):
+    """
+    Test that a valid SELL proposal target price structure (take_profit < entry < stop_loss)
+    succeeds and preserves positive R:R = 2.0.
+    """
+    user_id = str(uuid4())
+    payload = {
+        "user_id": user_id,
+        "symbol": "TSLA",
+        "action": "SELL",
+        "requested_quantity": 10,
+        "signal_id": "SIG-SELL123",
+        "entry_price": 339.34,
+        "stop_loss": 340.97,  # 340.97 > 339.34
+        "take_profit": 336.08, # 336.08 < 339.34
+        "confidence_score": 0.85,
+        "primary_strategy": "MomentumBreakout"
+    }
+    response = client.post("/trade-proposals", json=payload)
+    assert response.status_code == status.HTTP_201_CREATED
+    
+    # R:R check (339.34 - 336.08) / (340.97 - 339.34) = 3.26 / 1.63 = 2.0 (with roundoffs)
+    risk = round(payload["stop_loss"] - payload["entry_price"], 2)
+    reward = round(payload["entry_price"] - payload["take_profit"], 2)
+    assert round(reward / risk, 1) == 2.0
+
+def test_tsla_malformed_buy_proposal_rejected(db):
+    """
+    Regression test reproducing the TSLA-style malformed BUY case:
+    Action: BUY
+    Entry: 339.34
+    Stop Loss: 340.97 (greater than entry, invalid!)
+    Take Profit: 336.08 (less than entry, invalid!)
+    Should be rejected with HTTP 422.
+    """
+    user_id = str(uuid4())
+    payload = {
+        "user_id": user_id,
+        "symbol": "TSLA",
+        "action": "BUY",
+        "requested_quantity": 10,
+        "signal_id": "SIG-MALFORMED-BUY",
+        "entry_price": 339.34,
+        "stop_loss": 340.97,  # Invalid: stop loss > entry
+        "take_profit": 336.08, # Invalid: take profit < entry
+        "confidence_score": 0.85,
+        "primary_strategy": "MomentumBreakout"
+    }
+    response = client.post("/trade-proposals", json=payload)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "invalid buy price structure" in response.json()["detail"].lower()
+
+def test_malformed_sell_proposal_rejected(db):
+    """
+    Test that a malformed SELL proposal:
+    Action: SELL
+    Entry: 150.00
+    Stop Loss: 145.00 (less than entry, invalid!)
+    Take Profit: 160.00 (greater than entry, invalid!)
+    Should be rejected with HTTP 422.
+    """
+    user_id = str(uuid4())
+    payload = {
+        "user_id": user_id,
+        "symbol": "AAPL",
+        "action": "SELL",
+        "requested_quantity": 10,
+        "signal_id": "SIG-MALFORMED-SELL",
+        "entry_price": 150.00,
+        "stop_loss": 145.00,
+        "take_profit": 160.00,
+        "confidence_score": 0.85,
+        "primary_strategy": "MomentumBreakout"
+    }
+    response = client.post("/trade-proposals", json=payload)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "invalid sell price structure" in response.json()["detail"].lower()
+
+def test_cannot_persist_invalid_proposal_structure(db):
+    """
+    Direct unit test verifying that TradeProposalService.create_proposal raises HTTPException
+    when presented with invalid directional price structures.
+    """
+    from src.trade_proposal_service import TradeProposalService
+    from src.schemas import TradeProposalCreate
+    from fastapi import HTTPException
+    
+    service = TradeProposalService()
+    user_id = uuid4()
+    portfolio_id = uuid4()
+    
+    # 1. Invalid BUY (stop loss above entry)
+    proposal_in = TradeProposalCreate(
+        user_id=user_id,
+        portfolio_id=portfolio_id,
+        symbol="AAPL",
+        action=SignalAction.BUY,
+        requested_quantity=10,
+        signal_id="SIG-TEST1",
+        entry_price=100.0,
+        stop_loss=105.0,  # Invalid
+        take_profit=120.0,
+        confidence_score=0.8,
+        primary_strategy="EMACrossover"
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        service.create_proposal(db, proposal_in)
+    assert exc_info.value.status_code == 422
+    assert "invalid buy price structure" in exc_info.value.detail.lower()
+
+    # 2. Invalid SELL (stop loss below entry)
+    proposal_in_sell = TradeProposalCreate(
+        user_id=user_id,
+        portfolio_id=portfolio_id,
+        symbol="AAPL",
+        action=SignalAction.SELL,
+        requested_quantity=10,
+        signal_id="SIG-TEST2",
+        entry_price=100.0,
+        stop_loss=95.0,  # Invalid
+        take_profit=80.0,
+        confidence_score=0.8,
+        primary_strategy="EMACrossover"
+    )
+    with pytest.raises(HTTPException) as exc_info_sell:
+        service.create_proposal(db, proposal_in_sell)
+    assert exc_info_sell.value.status_code == 422
+    assert "invalid sell price structure" in exc_info_sell.value.detail.lower()

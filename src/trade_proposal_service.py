@@ -7,6 +7,7 @@ from typing import Optional
 from src.database import TradeProposal
 from src.schemas import TradeProposalCreate, SignalAction
 from src.trade_proposal_repository import TradeProposalRepository
+from src.strategies.evaluator import validate_target_invariants
 
 class TradeProposalService:
     def __init__(self):
@@ -30,6 +31,19 @@ class TradeProposalService:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="HOLD action is not allowed for executable trade proposals. Only BUY or SELL actions are allowed."
+            )
+
+        # Direction-aware target price invariants check using centralized validator
+        is_valid, err_msg = validate_target_invariants(
+            action=proposal_in.action,
+            entry_price=proposal_in.entry_price,
+            stop_loss=proposal_in.stop_loss,
+            take_profit=proposal_in.take_profit
+        )
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=err_msg
             )
 
         if not proposal_in.signal_id or not proposal_in.signal_id.startswith("SIG-"):

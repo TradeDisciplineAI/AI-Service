@@ -22,6 +22,31 @@ STRATEGY_PRIORITY = {
     "EMACrossover": 3
 }
 
+def validate_target_invariants(
+    action: SignalAction,
+    entry_price: float,
+    stop_loss: float,
+    take_profit: float
+) -> Tuple[bool, str]:
+    """
+    Validates directional price structures:
+      - BUY:  stop_loss < entry_price < take_profit
+      - SELL: take_profit < entry_price < stop_loss
+    """
+    if entry_price <= 0 or stop_loss <= 0 or take_profit <= 0:
+        return False, "Price targets (entry_price, stop_loss, take_profit) must be positive values."
+
+    if action == SignalAction.BUY:
+        if not (stop_loss < entry_price < take_profit):
+            return False, f"Invalid BUY price structure: stop loss ({stop_loss}) must be below entry ({entry_price}), which must be below take profit ({take_profit})."
+    elif action == SignalAction.SELL:
+        if not (take_profit < entry_price < stop_loss):
+            return False, f"Invalid SELL price structure: take profit ({take_profit}) must be below entry ({entry_price}), which must be below stop loss ({stop_loss})."
+    else:
+        return False, "Action must be BUY or SELL for trade proposal."
+
+    return True, ""
+
 class StrategyEvaluator:
     def __init__(self, strategies: Optional[List[BaseStrategy]] = None):
         self.strategies = strategies or [
@@ -125,9 +150,9 @@ class StrategyEvaluator:
             reward = round(2.0 * risk, 2)
             take_profit = round(entry_price - reward, 2)
             
-            # Invalid target ordering validation check
-            if not (take_profit < entry_price < stop_loss):
-                raise ValueError("Invalid target price ordering calculated for SELL signal.")
+            is_valid, err_msg = validate_target_invariants(action, entry_price, stop_loss, take_profit)
+            if not is_valid:
+                raise ValueError(err_msg)
                 
             risk_reward_ratio = round(reward / risk, 2)
         else:  # Default to BUY
@@ -139,9 +164,9 @@ class StrategyEvaluator:
             reward = round(2.0 * risk, 2)
             take_profit = round(entry_price + reward, 2)
 
-            # Invalid target ordering validation check
-            if not (stop_loss < entry_price < take_profit):
-                raise ValueError("Invalid target price ordering calculated for BUY signal.")
+            is_valid, err_msg = validate_target_invariants(action, entry_price, stop_loss, take_profit)
+            if not is_valid:
+                raise ValueError(err_msg)
                 
             risk_reward_ratio = round(reward / risk, 2)
 
@@ -253,14 +278,10 @@ class StrategyEvaluator:
                 reasons.append(f"Filtered to HOLD: Risk:Reward ({risk_reward_ratio:.2f}) below 1.5 minimum limit.")
 
         # 7. Defensive Validation / Invariant check before returning
-        if final_action == SignalAction.BUY:
-            if not (stop_loss < entry_price < take_profit):
-                final_action = SignalAction.HOLD
-                reasons.append("Filtered to HOLD: Invalid BUY target price structure detected.")
-        elif final_action == SignalAction.SELL:
-            if not (take_profit < entry_price < stop_loss):
-                final_action = SignalAction.HOLD
-                reasons.append("Filtered to HOLD: Invalid SELL target price structure detected.")
+        is_valid, _ = validate_target_invariants(final_action, entry_price, stop_loss, take_profit)
+        if not is_valid and final_action in [SignalAction.BUY, SignalAction.SELL]:
+            final_action = SignalAction.HOLD
+            reasons.append("Filtered to HOLD: Invalid target price structure detected.")
 
         signal_id = f"SIG-{uuid.uuid4().hex[:8].upper()}"
 
