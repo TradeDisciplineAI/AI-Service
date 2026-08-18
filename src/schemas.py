@@ -1,6 +1,8 @@
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from pydantic import BaseModel, Field
+from uuid import UUID
+from datetime import datetime
 
 # API Request Blueprint
 class AnalyzeRequest(BaseModel):
@@ -106,3 +108,39 @@ class RAGIngestResponse(BaseModel):
     status: str = Field(default="stored", description="Ingestion status e.g. 'stored'")
     trade_id: str = Field(description="Trade ID stored")
     vector_id: str = Field(description="Qdrant point ID")
+
+
+class TradeProposalCreate(BaseModel):
+    user_id: UUID
+    portfolio_id: Optional[UUID] = None
+    symbol: str
+    action: SignalAction
+    requested_quantity: int
+    signal_id: str
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    confidence_score: float
+    primary_strategy: str
+
+
+class TradeProposalResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    portfolio_id: Optional[UUID] = None
+    signal_id: str
+    symbol: str
+    action: SignalAction
+    requested_quantity: int
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    confidence_score: float
+    primary_strategy: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }

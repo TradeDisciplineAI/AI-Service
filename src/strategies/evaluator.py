@@ -122,7 +122,7 @@ class StrategyEvaluator:
             try:
                 sig = strat.evaluate(technicals, market_scan)
                 strategy_signals.append(sig)
-                if sig.action == SignalAction.BUY and sig.score > 0.0:
+                if sig.action in [SignalAction.BUY, SignalAction.SELL] and sig.score > 0.0:
                     active_signals.append(sig)
             except Exception as e:
                 logger.error(f"Error evaluating strategy {strat.name}: {e}")
@@ -163,21 +163,31 @@ class StrategyEvaluator:
         confidence_final = max(0.0, min(1.0, round(confidence_final, 4)))
 
         # 5. Target Price Math (1.5x ATR Stop Loss & 1:2 R:R Take Profit)
-        stop_loss = round(entry_price - (1.5 * atr), 2)
-        risk_amount = entry_price - stop_loss
-        if risk_amount <= 0:
-            risk_amount = max(entry_price * 0.005, 0.01)
-            stop_loss = round(entry_price - risk_amount, 2)
+        if active_signals and active_signals[0].action == SignalAction.SELL:
+            stop_loss = round(entry_price + (1.5 * atr), 2)
+            risk_amount = stop_loss - entry_price
+            if risk_amount <= 0:
+                risk_amount = max(entry_price * 0.005, 0.01)
+                stop_loss = round(entry_price + risk_amount, 2)
 
-        take_profit = round(entry_price + (2.0 * risk_amount), 2)
-        risk_reward_ratio = round((take_profit - entry_price) / (entry_price - stop_loss), 2)
+            take_profit = round(entry_price - (2.0 * risk_amount), 2)
+            risk_reward_ratio = round((entry_price - take_profit) / risk_amount, 2) if risk_amount > 0 else 0.0
+        else:
+            stop_loss = round(entry_price - (1.5 * atr), 2)
+            risk_amount = entry_price - stop_loss
+            if risk_amount <= 0:
+                risk_amount = max(entry_price * 0.005, 0.01)
+                stop_loss = round(entry_price - risk_amount, 2)
+
+            take_profit = round(entry_price + (2.0 * risk_amount), 2)
+            risk_reward_ratio = round((take_profit - entry_price) / risk_amount, 2) if risk_amount > 0 else 0.0
 
         # 6. Execution Gate (Confidence >= Threshold AND R:R >= 1.5)
         is_confidence_passed = confidence_final >= threshold
         is_rr_passed = risk_reward_ratio >= 1.5
 
         if active_signals and is_confidence_passed and is_rr_passed:
-            final_action = SignalAction.BUY
+            final_action = active_signals[0].action
             reasons.append(f"Confidence score {confidence_final:.2f} met required threshold ({threshold:.2f}) under mode {mode.value}.")
         else:
             final_action = SignalAction.HOLD

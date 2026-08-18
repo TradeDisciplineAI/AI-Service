@@ -17,12 +17,15 @@ class MomentumBreakoutStrategy(BaseStrategy):
         ema_trend = technicals.ema.trend
         rsi = technicals.rsi
 
-        # Trigger conditions
         is_breakout_or_volume = breakout or volume_surge
+        
         is_uptrend = ema_trend in ["UPTREND", "BULLISH_CROSS"]
-        is_healthy_rsi = 50.0 <= rsi <= 72.0  # Conservative upper buffer below 75
+        is_healthy_bullish_rsi = 50.0 <= rsi <= 72.0  # Conservative upper buffer below 75
+        
+        is_downtrend = ema_trend in ["DOWNTREND", "BEARISH_CROSS"]
+        is_healthy_bearish_rsi = 28.0 <= rsi <= 50.0  # Conservative lower buffer above 25
 
-        if is_breakout_or_volume and is_uptrend and is_healthy_rsi:
+        if is_breakout_or_volume and is_uptrend and is_healthy_bullish_rsi:
             reason = (
                 f"Momentum Breakout triggered: Volume/Price breakout active, "
                 f"EMA trend is {ema_trend}, RSI is healthy ({rsi:.1f})."
@@ -30,6 +33,18 @@ class MomentumBreakoutStrategy(BaseStrategy):
             return StrategySignal(
                 strategy_name=self.name,
                 action=SignalAction.BUY,
+                score=0.90,
+                reason=reason
+            )
+
+        if is_breakout_or_volume and is_downtrend and is_healthy_bearish_rsi:
+            reason = (
+                f"Momentum Breakdown (Bearish) triggered: Volume/Price breakout active, "
+                f"EMA trend is {ema_trend}, RSI is healthy ({rsi:.1f})."
+            )
+            return StrategySignal(
+                strategy_name=self.name,
+                action=SignalAction.SELL,
                 score=0.90,
                 reason=reason
             )

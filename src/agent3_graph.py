@@ -33,8 +33,14 @@ def ingest_inputs_node(state: Agent3State) -> Agent3State:
         try:
             # Fallback: Fetch raw market data for ticker
             logger.info(f"Market scan candles missing for {ticker}. Running fetch_market_data fallback.")
-            raw_candles = fetch_market_data(ticker)
-            if isinstance(raw_candles, list) and len(raw_candles) > 0:
+            fetched_data = fetch_market_data(ticker)
+            raw_candles = []
+            if isinstance(fetched_data, list):
+                raw_candles = fetched_data
+            elif isinstance(fetched_data, dict):
+                raw_candles = fetched_data.get("ohlcv_candles") or fetched_data.get("candles") or []
+
+            if len(raw_candles) > 0:
                 market_scan = {
                     "symbol": ticker,
                     "candles": raw_candles,

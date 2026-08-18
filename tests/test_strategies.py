@@ -66,6 +66,60 @@ def test_ema_crossover_strategy_trigger():
     assert sig.score == 0.80
     assert sig.strategy_name == "EMACrossover"
 
+def test_momentum_breakout_strategy_bearish_trigger(mock_technicals):
+    strat = MomentumBreakoutStrategy()
+    scan = {"breakout_detected": True, "volume_surge": True}
+    
+    bearish_technicals = TechnicalIndicatorsResult(
+        symbol="RELIANCE",
+        current_price=2400.0,
+        rsi=40.0,
+        macd=MACDResult(macd_line=-5.0, signal_line=-4.0, histogram=-1.0),
+        ema=EMAResult(ema_9=2410.0, ema_21=2420.0, trend="DOWNTREND"),
+        bollinger=BollingerBandsResult(upper=2460.0, middle=2430.0, lower=2400.0, bandwidth=0.025),
+        atr=18.0,
+        summary={}
+    )
+    
+    sig = strat.evaluate(bearish_technicals, scan)
+    assert sig.action == SignalAction.SELL
+    assert sig.score == 0.90
+    assert sig.strategy_name == "MomentumBreakout"
+
+def test_mean_reversion_strategy_bearish_trigger():
+    strat = MeanReversionStrategy()
+    overbought_technicals = TechnicalIndicatorsResult(
+        symbol="RELIANCE",
+        current_price=2460.0,
+        rsi=70.0,
+        macd=MACDResult(macd_line=5.0, signal_line=6.0, histogram=-1.0),
+        ema=EMAResult(ema_9=2440.0, ema_21=2430.0, trend="UPTREND"),
+        bollinger=BollingerBandsResult(upper=2460.0, middle=2430.0, lower=2400.0, bandwidth=0.025),
+        atr=18.0,
+        summary={}
+    )
+    sig = strat.evaluate(overbought_technicals, {})
+    assert sig.action == SignalAction.SELL
+    assert sig.score == 0.85
+    assert sig.strategy_name == "MeanReversion"
+
+def test_ema_crossover_strategy_bearish_trigger():
+    strat = EMACrossoverStrategy()
+    cross_technicals = TechnicalIndicatorsResult(
+        symbol="RELIANCE",
+        current_price=2435.0,
+        rsi=45.0,
+        macd=MACDResult(macd_line=-1.0, signal_line=-0.5, histogram=-0.5),
+        ema=EMAResult(ema_9=2440.0, ema_21=2445.0, trend="BEARISH_CROSS"),
+        bollinger=BollingerBandsResult(upper=2470.0, middle=2440.0, lower=2410.0, bandwidth=0.024),
+        atr=15.0,
+        summary={}
+    )
+    sig = strat.evaluate(cross_technicals, {})
+    assert sig.action == SignalAction.SELL
+    assert sig.score == 0.80
+    assert sig.strategy_name == "EMACrossover"
+
 def test_full_integration_mode_weights_and_threshold(mock_technicals):
     evaluator = StrategyEvaluator()
     scan = {"breakout_detected": True, "volume_surge": True}
@@ -165,6 +219,45 @@ def test_atr_target_price_and_risk_reward_math(mock_technicals):
     assert result.stop_loss == 2420.0
     assert result.take_profit == 2510.0
     assert result.risk_reward_ratio == 2.0
+
+def test_atr_target_price_and_risk_reward_math_sell(mock_technicals):
+    evaluator = StrategyEvaluator()
+    scan = {"breakout_detected": True, "volume_surge": True}
+    
+    # Make MomentumBreakout strategy output SELL
+    mock_technicals.ema.trend = "DOWNTREND"
+    mock_technicals.rsi = 40.0
+    
+    result = evaluator.evaluate_all(mock_technicals, scan, None, None)
+    
+    assert result.action == SignalAction.SELL
+    # current_price = 2450.0, atr = 20.0
+    # stop_loss = 2450.0 + (1.5 * 20.0) = 2480.0
+    # risk = 30.0
+    # take_profit = 2450.0 - (2.0 * 30.0) = 2390.0
+    # R:R = (2450.0 - 2390.0) / (2480.0 - 2450.0) = 60.0 / 30.0 = 2.0
+    assert result.entry_price == 2450.0
+    assert result.stop_loss == 2480.0
+    assert result.take_profit == 2390.0
+    assert result.risk_reward_ratio == 2.0
+    
+def test_below_threshold_sell_becomes_hold(mock_technicals):
+    evaluator = StrategyEvaluator()
+    scan = {"breakout_detected": True, "volume_surge": True}
+    
+    # RAG OFFLINE mode (requires 0.75)
+    sentiment = {"sentiment_score": -0.80} # norm = 0.10
+    rag = None
+    
+    # Bearish setup score = 0.90
+    mock_technicals.ema.trend = "DOWNTREND"
+    mock_technicals.rsi = 40.0
+    
+    result = evaluator.evaluate_all(mock_technicals, scan, sentiment, rag)
+    # Expected score = (0.625 * 0.90) + (0.375 * 0.10) = 0.5625 + 0.0375 = 0.60
+    # 0.60 < 0.75 -> HOLD
+    assert result.confidence_score == 0.60
+    assert result.action == SignalAction.HOLD
 
 def test_deterministic_tie_breaking(mock_technicals):
     """Verify that when strategies tie on max score, priority order MomentumBreakout > MeanReversion > EMACrossover breaks tie."""
