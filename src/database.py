@@ -1,6 +1,9 @@
 import os
 import uuid
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, text, Numeric, UUID, ForeignKey
+from sqlalchemy import (
+    create_engine, Column, Integer, String, DateTime, JSON,
+    text, Numeric, UUID, ForeignKey, UniqueConstraint,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime, timezone
 
@@ -16,13 +19,14 @@ if DATABASE_URL.startswith("postgresql+asyncpg://"):
 # Engine configuration
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 connect_args = {"check_same_thread": False} if IS_SQLITE else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
 # Use schema only for PostgreSQL
 schema_kwargs = {"schema": "ai"} if engine.dialect.name == "postgresql" else {}
+
 
 # Define the Agent 1 Market Signals Table
 class MarketSignals(Base):
@@ -34,6 +38,7 @@ class MarketSignals(Base):
     scan_data = Column(JSON)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+
 # Define the Agent 2 AI Analysis Table
 class AIAnalysis(Base):
     __tablename__ = "ai_analyses"
@@ -44,6 +49,7 @@ class AIAnalysis(Base):
     analysis_data = Column(JSON)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+
 # Define the Agent 2 Stock News Table
 class StockNews(Base):
     __tablename__ = "stock_news"
@@ -53,6 +59,7 @@ class StockNews(Base):
     ticker = Column(String, index=True, unique=True)
     headlines = Column(JSON)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 
 # Define the Trade Proposal Table
 class TradeProposal(Base):
@@ -78,6 +85,8 @@ class TradeProposal(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     risk_evaluations = relationship("RiskEvaluation", back_populates="proposal", cascade="all, delete-orphan")
+    execution_intent = relationship("ExecutionIntent", back_populates="proposal", uselist=False, cascade="all, delete-orphan")
+
 
 # Define the Risk Evaluation Table (stores multiple evaluation history records)
 class RiskEvaluation(Base):
@@ -86,7 +95,7 @@ class RiskEvaluation(Base):
         __table_args__ = schema_kwargs
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    proposal_id = Column(UUID(as_uuid=True), ForeignKey(TradeProposal.id, ondelete="CASCADE"), nullable=False, index=True)
+    proposal_id = Column(UUID(as_uuid=True), ForeignKey(f"{'ai.' if schema_kwargs else ''}trade_proposals.id", ondelete="CASCADE"), nullable=False, index=True)
     decision = Column(String, nullable=False)
     risk_score = Column(Integer, nullable=False)
     max_risk = Column(Numeric(18, 4), nullable=False)
@@ -98,6 +107,35 @@ class RiskEvaluation(Base):
     evaluated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     proposal = relationship("TradeProposal", back_populates="risk_evaluations")
+
+
+# Define the Execution Intent Table (Agent 5 idempotency anchor)
+class ExecutionIntent(Base):
+    __tablename__ = "execution_intents"
+    if schema_kwargs:
+        __table_args__ = (
+            UniqueConstraint("proposal_id", name="uq_execution_intents_proposal_id"),
+            schema_kwargs,
+        )
+    else:
+        __table_args__ = (
+            UniqueConstraint("proposal_id", name="uq_execution_intents_proposal_id"),
+        )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    proposal_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{'ai.' if schema_kwargs else ''}trade_proposals.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+    status = Column(String(20), nullable=False, default="PENDING")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime, nullable=True)
+
+    proposal = relationship("TradeProposal", back_populates="execution_intent")
+
 
 # Read-only SQLAlchemy mappings for Market-Service schema
 class MarketPortfolio(Base):
@@ -111,6 +149,7 @@ class MarketPortfolio(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+
 class MarketPaperPosition(Base):
     __tablename__ = "paper_positions"
     __table_args__ = {"schema": "market"} if engine.dialect.name == "postgresql" else {}
@@ -123,6 +162,7 @@ class MarketPaperPosition(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+
 # Create schema and tables logic
 if engine.dialect.name == "postgresql":
     with engine.connect() as connection:
@@ -133,10 +173,10 @@ else:
     # For SQLite (unit tests), automatically create all tables
     Base.metadata.create_all(bind=engine)
 
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-

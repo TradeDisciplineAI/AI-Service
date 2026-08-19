@@ -189,3 +189,50 @@ class RiskEvaluationResponse(BaseModel):
         "from_attributes": True
     }
 
+
+
+# === AGENT 5: PAPER EXECUTION SCHEMAS ===
+
+class PaperExecutionRequest(BaseModel):
+    """Payload sent from AI-Service to market-service internal endpoint."""
+    proposal_id: UUID
+    execution_id: str
+    portfolio_id: UUID
+    user_id: UUID
+    symbol: str
+    action: str  # "BUY" | "SELL"
+    requested_quantity: int
+    stop_loss: float
+    take_profit: float
+    primary_strategy: str
+
+
+class PaperExecutionResponse(BaseModel):
+    """Response from market-service internal fill endpoint."""
+    execution_id: str
+    proposal_id: UUID
+    symbol: str
+    action: str
+    filled_quantity: int
+    execution_price: float
+    executed_at: datetime
+
+
+class ExecutionResultResponse(BaseModel):
+    """Returned by POST /trade-proposals/{id}/execute on success."""
+    execution_id: str
+    proposal_id: UUID
+    symbol: str
+    action: str
+    requested_quantity: int
+    filled_quantity: int
+    execution_price: float
+    stop_loss: float
+    take_profit: float
+    primary_strategy: str
+    executed_at: datetime
+    proposal_status: str  # "EXECUTED"
+
+    model_config = {
+        "from_attributes": True
+    }

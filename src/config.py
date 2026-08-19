@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class IndicatorSettings(BaseSettings):
     RSI_PERIOD: int = 14
     EMA_FAST_PERIOD: int = 9
@@ -11,11 +12,12 @@ class IndicatorSettings(BaseSettings):
     BOLLINGER_PERIOD: int = 20
     BOLLINGER_STD_DEV: float = 2.0
     ATR_PERIOD: int = 14
-    
+
     # Caching
     INDICATOR_CACHE_SIZE: int = 1024
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
 
 class RAGSettings(BaseSettings):
     QDRANT_HOST: str = "localhost"
@@ -26,6 +28,7 @@ class RAGSettings(BaseSettings):
     QDRANT_API_KEY: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
 
 indicator_settings = IndicatorSettings()
 rag_settings = RAGSettings()
@@ -41,4 +44,17 @@ class RiskSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+
 risk_settings = RiskSettings()
+
+
+class ExecutionSettings(BaseSettings):
+    """Settings for Agent 5 paper execution and market-service integration."""
+
+    MARKET_SERVICE_INTERNAL_URL: str = "http://localhost:8001"
+    MARKET_SERVICE_INTERNAL_SECRET: str = ""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+
+execution_settings = ExecutionSettings()
