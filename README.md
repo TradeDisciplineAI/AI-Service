@@ -101,6 +101,13 @@ This service is fully integrated with **Celery Beat** (running inside the `marke
 
 This architecture reduces AI API calls by over 90% while guaranteeing that the moment a user adds a stock to their portfolio, it is actively monitored for breakouts!
 
+### The Generator vs Display Workflow (Frontend Integration)
+To allow thousands of users to view the data concurrently without crashing the server or burning API credits, we split the workflow:
+* **The Generator (`POST /scan`):** Triggered strictly every **5 minutes** by Celery in the background. It does the heavy AI lifting and saves the result to the database.
+* **The Display (`GET /market-signals/{ticker}`):** A lightweight endpoint that reads the saved database row. The user's frontend (React/Next.js) polls this endpoint every **5 seconds**. 
+
+Because the `/market-signals` endpoint does no heavy lifting, 10,000 users can poll it simultaneously every 5 seconds, resulting in a "Live" frontend experience with virtually zero server cost!
+
 ---
 
 ## 🐳 Docker Deployment

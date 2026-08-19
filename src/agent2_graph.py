@@ -13,7 +13,7 @@ from src.tools.twitter_tool import fetch_twitter_sentiment
 logger = logging.getLogger(__name__)
 
 # We use the standard LLM directly
-llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.1)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1,max_retries=6)
 
 def gather_data_node(state: Agent2State):
     ticker = state["ticker"]
@@ -70,11 +70,24 @@ def analyze_node(state: Agent2State):
     }}
     """
     
-    # Pass both prompts as a list of HumanMessages to enforce strict JSON compliance
-    response = llm.invoke([
-        HumanMessage(content=system_prompt),
-        HumanMessage(content=schema_prompt)
-    ])
+    import time
+    
+    response = None
+    for attempt in range(6): # Try up to 6 times
+        try:
+            response = llm.invoke([
+                HumanMessage(content=system_prompt),
+                HumanMessage(content=schema_prompt)
+            ])
+            break # Success! Break out of the loop
+        except Exception as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                logger.warning(f"Agent 2: Google Rate Limit hit! Waiting 65 seconds before retry (Attempt {attempt+1}/6)...")
+                time.sleep(65) # Force the program to wait 65 seconds
+                if attempt == 5: 
+                    raise e # Give up after 6 failed tries
+            else:
+                raise e # If it's a different error, throw it immediately
     
     # YOUR ORIGINAL FIX: Safely convert the output to a string whether it's a list or not
     content = response.content
