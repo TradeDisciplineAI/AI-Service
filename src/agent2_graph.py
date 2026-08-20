@@ -66,7 +66,12 @@ def analyze_node(state: Agent2State):
         "overall_sentiment": "Bullish",
         "conviction_score": 8,
         "summary": "Short 2 sentence summary here.",
-        "top_headlines": ["Headline 1", "Headline 2", "Headline 3"]
+        "top_headlines": [
+            {{
+                "title": "Headline 1",
+                "description": "Short explanation of the headline."
+            }}
+        ]
     }}
     """
     

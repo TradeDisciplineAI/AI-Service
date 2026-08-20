@@ -4,6 +4,11 @@ import json
 import concurrent.futures
 import time
 from datetime import datetime, timezone
+from typing import Dict, Tuple, Any
+
+SCAN_CACHE: Dict[str, Tuple[float, Any]] = {}
+ANALYZE_CACHE: Dict[str, Tuple[float, Any]] = {}
+CACHE_TTL = 300  # 5 minutes
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
@@ -75,6 +80,13 @@ async def scan_market_batch(request: BatchAnalyzeRequest, db: Session = Depends(
         tickers = [t.upper() for t in request.tickers]
         logger.info(f"Received batch request for Agent 1 to scan {len(tickers)} tickers")
         
+        cache_key = ",".join(sorted(tickers))
+        if cache_key in SCAN_CACHE:
+            expiry, cached_res = SCAN_CACHE[cache_key]
+            if time.time() < expiry:
+                logger.info(f"Returning cached /scan-batch for {len(tickers)} tickers")
+                return cached_res
+        
         # 1. Gather all market data concurrently
         market_data_map = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -99,7 +111,7 @@ async def scan_market_batch(request: BatchAnalyzeRequest, db: Session = Depends(
             return {"status": "error", "message": "Failed to fetch market data for any tickers."}
 
         # 3. Call AI
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_retries=0)
         system_prompt = f"""You are Agent 1, the Market Scanner.
         Analyze this 5-minute intraday price action and volume for the following stocks: {valid_tickers}.
         1. Determine if each stock is experiencing a 'Breakout', a 'Reversal', or 'Consolidating'.
@@ -187,7 +199,9 @@ async def scan_market_batch(request: BatchAnalyzeRequest, db: Session = Depends(
             saved_count += 1
             
         db.commit()
-        return {"status": "success", "message": f"Saved {saved_count} tickers to database!"}
+        response_dict = {"status": "success", "message": f"Saved {saved_count} tickers to database!"}
+        SCAN_CACHE[cache_key] = (time.time() + CACHE_TTL, response_dict)
+        return response_dict
         
     except Exception as e:
         logger.error(f"Error in /scan-batch endpoint: {str(e)}")
@@ -207,6 +221,13 @@ async def analyze_stock_batch(request: BatchAnalyzeRequest, db: Session = Depend
     try:
         tickers = [t.upper() for t in request.tickers]
         logger.info(f"Received batch request to analyze {len(tickers)} tickers")
+        
+        cache_key = ",".join(sorted(tickers))
+        if cache_key in ANALYZE_CACHE:
+            expiry, cached_res = ANALYZE_CACHE[cache_key]
+            if time.time() < expiry:
+                logger.info(f"Returning cached /analyze-batch for {len(tickers)} tickers")
+                return cached_res
         
         # 1. Gather all news data concurrently
         news_data_map = {}
@@ -243,7 +264,7 @@ async def analyze_stock_batch(request: BatchAnalyzeRequest, db: Session = Depend
             return {"status": "error", "message": "Failed to fetch news data for any tickers."}
 
         # 3. Call AI
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_retries=6)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_retries=0)
         system_prompt = f"""You are Agent 2, the News & Sentiment Analyzer.
         Analyze the following real-time data for the following stocks: {valid_tickers}. 
         Calculate the overall sentiment and conviction score for each.
@@ -261,7 +282,12 @@ async def analyze_stock_batch(request: BatchAnalyzeRequest, db: Session = Depend
                 "overall_sentiment": "Bullish",
                 "conviction_score": 8,
                 "summary": "Short 2 sentence summary here.",
-                "top_headlines": ["Headline 1", "Headline 2", "Headline 3"]
+                "top_headlines": [
+                    {
+                        "title": "Headline 1",
+                        "description": "Short explanation of the headline."
+                    }
+                ]
             }
         }
         """
@@ -334,7 +360,9 @@ async def analyze_stock_batch(request: BatchAnalyzeRequest, db: Session = Depend
             saved_count += 1
             
         db.commit()
-        return {"status": "success", "message": f"Saved {saved_count} tickers news to database!"}
+        response_dict = {"status": "success", "message": f"Saved {saved_count} tickers news to database!"}
+        ANALYZE_CACHE[cache_key] = (time.time() + CACHE_TTL, response_dict)
+        return response_dict
         
     except Exception as e:
         logger.error(f"Error in /analyze-batch endpoint: {str(e)}")
