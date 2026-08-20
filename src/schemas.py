@@ -1,12 +1,16 @@
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from enum import Enum
-from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
 
 # API Request Blueprint
 class AnalyzeRequest(BaseModel):
     ticker: str
+
+class BatchAnalyzeRequest(BaseModel):
+    tickers: List[str]
+
 
 # Agent 3 Master REST Request Blueprint
 class Agent3EvaluateRequest(BaseModel):

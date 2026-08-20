@@ -9,7 +9,7 @@ from src.tools.yfinance_tool import fetch_market_data
 
 logger = logging.getLogger(__name__)
 
-llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.1)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
 
 def gather_market_node(state: Agent1State):
     ticker = state["ticker"]
@@ -53,10 +53,24 @@ def analyze_market_node(state: Agent1State):
     }}
     """
     
-    response = llm.invoke([
-        HumanMessage(content=system_prompt),
-        HumanMessage(content=schema_prompt)
-    ])
+    import time
+    
+    response = None
+    for attempt in range(6):
+        try:
+            response = llm.invoke([
+                HumanMessage(content=system_prompt),
+                HumanMessage(content=schema_prompt)
+            ])
+            break
+        except Exception as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                logger.warning(f"Agent 1: Google Rate Limit hit! Waiting 65 seconds before retry (Attempt {attempt+1}/6)...")
+                time.sleep(65)
+                if attempt == 5:
+                    raise e
+            else:
+                raise e
     
     content = response.content
     if isinstance(content, list):
@@ -74,7 +88,7 @@ def analyze_market_node(state: Agent1State):
         # FINAL ASSEMBLY: Combine the Python market data with the AI's boolean flags
         final_dict = {
             "symbol": market_dict["symbol"],
-            "exchange": "NSE",
+            "exchange": "NSE" if market_dict["symbol"].endswith(".NS") or market_dict["symbol"].endswith(".BO") else "NASDAQ",
             "current_price": market_dict["current_price"],
             "timestamp": market_dict["timestamp"],
             "breakout_detected": ai_json.get("breakout_detected", False),

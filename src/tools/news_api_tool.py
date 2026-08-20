@@ -18,7 +18,7 @@ def fetch_financial_news(ticker: str) -> str:
             q=f"{ticker} OR SEBI",
             language='en',
             sort_by='relevancy',
-            page_size=5
+            page_size=15
         )
         
         articles = response.get('articles', [])
