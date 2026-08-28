@@ -1,9 +1,11 @@
 import logging
-from typing import List, Dict, Any, Optional
-from qdrant_client.models import Filter, FieldCondition, MatchValue
-from src.schemas import RAGQueryRequest, RAGContextResponse, TradeExecutionRecord
-from src.rag.vector_store import QdrantTradeVectorStore
+from typing import Any
+
+from qdrant_client.models import FieldCondition, Filter, MatchValue
+
 from src.rag.mistake_detector import detect_discipline_mistakes, parse_utc_timestamp
+from src.rag.vector_store import QdrantTradeVectorStore
+from src.schemas import RAGContextResponse, RAGQueryRequest, TradeExecutionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +20,18 @@ class RAGEvaluator:
     queries vector memory for similar historical setups, and computes a bounded confidence adjustment
     (-0.30 to +0.20) for Agent 3.
     """
-    def __init__(self, vector_store: Optional[QdrantTradeVectorStore] = None):
+
+    def __init__(self, vector_store: QdrantTradeVectorStore | None = None):
         self.vector_store = vector_store or QdrantTradeVectorStore()
 
-    def get_recent_trades(self, query_timestamp: str, window_minutes: int = 60) -> List[TradeExecutionRecord]:
+    def get_recent_trades(
+        self, query_timestamp: str, window_minutes: int = 60
+    ) -> list[TradeExecutionRecord]:
         """
         Retrieves account-wide recent trade execution records executed within the last window_minutes
         via payload-filtered Qdrant scroll.
         """
-        recent_records: List[TradeExecutionRecord] = []
+        recent_records: list[TradeExecutionRecord] = []
         req_dt = parse_utc_timestamp(query_timestamp)
 
         try:
@@ -34,7 +39,7 @@ class RAGEvaluator:
                 collection_name=self.vector_store.collection_name,
                 limit=100,
                 with_payload=True,
-                with_vectors=False
+                with_vectors=False,
             )
             for point in records:
                 payload = point.payload or {}
@@ -45,28 +50,36 @@ class RAGEvaluator:
                     if 0 <= time_diff <= (window_minutes * 60):
                         try:
                             # Reconstruct TradeExecutionRecord model
-                            clean_payload = {k: v for k, v in payload.items() if k != "text_repr"}
+                            clean_payload = {
+                                k: v for k, v in payload.items() if k != "text_repr"
+                            }
                             record = TradeExecutionRecord.model_validate(clean_payload)
                             recent_records.append(record)
                         except Exception as val_err:
-                            logger.warning(f"Error validating payload into TradeExecutionRecord: {val_err}")
+                            logger.warning(
+                                f"Error validating payload into TradeExecutionRecord: {val_err}"
+                            )
         except Exception as e:
             logger.error(f"Error scrolling recent trades from Qdrant: {e}")
 
         return recent_records
 
-    def query_similar_setups(self, symbol: str, text_query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    def query_similar_setups(
+        self, symbol: str, text_query: str, top_k: int = 5
+    ) -> list[dict[str, Any]]:
         """
         Queries Qdrant vector memory for top_k similar past trade setups for the specified symbol.
         Supports both query_points() and search() API methods across QdrantClient versions.
         """
-        similar_trades: List[Dict[str, Any]] = []
+        similar_trades: list[dict[str, Any]] = []
         try:
             query_vector = self.vector_store.generate_embedding(text_query)
             query_filter = Filter(
-                must=[FieldCondition(key="symbol", match=MatchValue(value=symbol.upper()))]
+                must=[
+                    FieldCondition(key="symbol", match=MatchValue(value=symbol.upper()))
+                ]
             )
-            
+
             results = []
             if hasattr(self.vector_store.client, "query_points"):
                 response = self.vector_store.client.query_points(
@@ -74,7 +87,7 @@ class RAGEvaluator:
                     query=query_vector,
                     query_filter=query_filter,
                     limit=top_k,
-                    with_payload=True
+                    with_payload=True,
                 )
                 results = getattr(response, "points", [])
             elif hasattr(self.vector_store.client, "search"):
@@ -83,7 +96,7 @@ class RAGEvaluator:
                     query_vector=query_vector,
                     query_filter=query_filter,
                     limit=top_k,
-                    with_payload=True
+                    with_payload=True,
                 )
 
             for res in results:
@@ -98,7 +111,7 @@ class RAGEvaluator:
     def calculate_win_rate_adjustment(self, win_rate: float) -> float:
         """
         Computes base confidence adjustment from historical win rate using top-down boundary-safe math.
-        
+
         Bands:
         - Win Rate >= 0.80 - 1e-9 -> +0.20
         - Win Rate >= 0.60 - 1e-9 -> +0.10
@@ -139,7 +152,9 @@ class RAGEvaluator:
         if similar_trades_count == 0:
             historical_win_rate = 0.50
             base_adjustment = 0.00
-            logger.info(f"Zero similar past trades found in Qdrant for {request.symbol}. Applying neutral fallback (Win Rate: 0.50, Adj: 0.00).")
+            logger.info(
+                f"Zero similar past trades found in Qdrant for {request.symbol}. Applying neutral fallback (Win Rate: 0.50, Adj: 0.00)."
+            )
         else:
             # Calculate Win Rate from retrieved similar setups
             wins = sum(1 for trade in similar_setups if trade.get("pnl", 0.0) > 0)
@@ -154,13 +169,19 @@ class RAGEvaluator:
         clamped_adjustment = max(-0.30, min(0.20, total_adjustment))
 
         # 7. Multi-Reason Warning Flag Formatting
-        warning_reasons: List[str] = []
+        warning_reasons: list[str] = []
         if similar_trades_count > 0 and historical_win_rate < 0.50:
-            warning_reasons.append(f"Low historical win rate ({historical_win_rate * 100:.1f}%)")
+            warning_reasons.append(
+                f"Low historical win rate ({historical_win_rate * 100:.1f}%)"
+            )
         if mistake_flags:
-            warning_reasons.append(f"Active Discipline Risks: {', '.join(mistake_flags)}")
+            warning_reasons.append(
+                f"Active Discipline Risks: {', '.join(mistake_flags)}"
+            )
 
-        warning_flag = "WARNING: " + "; ".join(warning_reasons) if warning_reasons else None
+        warning_flag = (
+            "WARNING: " + "; ".join(warning_reasons) if warning_reasons else None
+        )
 
         return RAGContextResponse(
             symbol=request.symbol.upper(),
@@ -168,5 +189,5 @@ class RAGEvaluator:
             historical_win_rate=round(historical_win_rate, 4),
             confidence_adjustment=round(clamped_adjustment, 4),
             warning_flag=warning_flag,
-            mistake_flags=mistake_flags
+            mistake_flags=mistake_flags,
         )

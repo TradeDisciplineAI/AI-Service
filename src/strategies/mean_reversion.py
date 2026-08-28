@@ -1,6 +1,8 @@
-from typing import Dict, Any
+from typing import Any
+
+from src.schemas import SignalAction, StrategySignal, TechnicalIndicatorsResult
 from src.strategies.base_strategy import BaseStrategy
-from src.schemas import TechnicalIndicatorsResult, StrategySignal, SignalAction
+
 
 class MeanReversionStrategy(BaseStrategy):
     @property
@@ -8,9 +10,7 @@ class MeanReversionStrategy(BaseStrategy):
         return "MeanReversion"
 
     def evaluate(
-        self, 
-        technicals: TechnicalIndicatorsResult, 
-        market_scan: Dict[str, Any]
+        self, technicals: TechnicalIndicatorsResult, market_scan: dict[str, Any]
     ) -> StrategySignal:
         price = technicals.current_price
         lower_band = technicals.bollinger.lower
@@ -21,7 +21,7 @@ class MeanReversionStrategy(BaseStrategy):
         is_near_lower_band = price <= (lower_band * 1.005)
         is_oversold = rsi < 35.0
         is_histogram_reversing_up = histogram >= -0.5
-        
+
         is_near_upper_band = price >= (upper_band * 0.995)
         is_overbought = rsi > 65.0
         is_histogram_reversing_down = histogram <= 0.5
@@ -35,7 +35,7 @@ class MeanReversionStrategy(BaseStrategy):
                 strategy_name=self.name,
                 action=SignalAction.BUY,
                 score=0.85,
-                reason=reason
+                reason=reason,
             )
 
         if is_near_upper_band and is_overbought and is_histogram_reversing_down:
@@ -47,12 +47,12 @@ class MeanReversionStrategy(BaseStrategy):
                 strategy_name=self.name,
                 action=SignalAction.SELL,
                 score=0.85,
-                reason=reason
+                reason=reason,
             )
 
         return StrategySignal(
             strategy_name=self.name,
             action=SignalAction.HOLD,
             score=0.0,
-            reason="Mean reversion conditions not met."
+            reason="Mean reversion conditions not met.",
         )

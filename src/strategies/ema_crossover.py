@@ -1,6 +1,8 @@
-from typing import Dict, Any
+from typing import Any
+
+from src.schemas import SignalAction, StrategySignal, TechnicalIndicatorsResult
 from src.strategies.base_strategy import BaseStrategy
-from src.schemas import TechnicalIndicatorsResult, StrategySignal, SignalAction
+
 
 class EMACrossoverStrategy(BaseStrategy):
     @property
@@ -8,19 +10,21 @@ class EMACrossoverStrategy(BaseStrategy):
         return "EMACrossover"
 
     def evaluate(
-        self, 
-        technicals: TechnicalIndicatorsResult, 
-        market_scan: Dict[str, Any]
+        self, technicals: TechnicalIndicatorsResult, market_scan: dict[str, Any]
     ) -> StrategySignal:
         ema_trend = technicals.ema.trend
         ema_9 = technicals.ema.ema_9
         ema_21 = technicals.ema.ema_21
         rsi = technicals.rsi
 
-        is_bullish_cross = (ema_trend == "BULLISH_CROSS") or (ema_trend == "UPTREND" and ema_9 > ema_21)
+        is_bullish_cross = (ema_trend == "BULLISH_CROSS") or (
+            ema_trend == "UPTREND" and ema_9 > ema_21
+        )
         is_sufficient_momentum = rsi >= 45.0
 
-        is_bearish_cross = (ema_trend == "BEARISH_CROSS") or (ema_trend == "DOWNTREND" and ema_9 < ema_21)
+        is_bearish_cross = (ema_trend == "BEARISH_CROSS") or (
+            ema_trend == "DOWNTREND" and ema_9 < ema_21
+        )
         is_bearish_momentum = 30.0 < rsi <= 55.0
 
         if is_bullish_cross and is_sufficient_momentum:
@@ -32,7 +36,7 @@ class EMACrossoverStrategy(BaseStrategy):
                 strategy_name=self.name,
                 action=SignalAction.BUY,
                 score=0.80,
-                reason=reason
+                reason=reason,
             )
 
         if is_bearish_cross and is_bearish_momentum:
@@ -44,12 +48,12 @@ class EMACrossoverStrategy(BaseStrategy):
                 strategy_name=self.name,
                 action=SignalAction.SELL,
                 score=0.80,
-                reason=reason
+                reason=reason,
             )
 
         return StrategySignal(
             strategy_name=self.name,
             action=SignalAction.HOLD,
             score=0.0,
-            reason="EMA crossover trend conditions not met."
+            reason="EMA crossover trend conditions not met.",
         )

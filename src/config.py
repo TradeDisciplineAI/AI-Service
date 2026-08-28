@@ -1,4 +1,3 @@
-import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +15,9 @@ class IndicatorSettings(BaseSettings):
     # Caching
     INDICATOR_CACHE_SIZE: int = 1024
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 class RAGSettings(BaseSettings):
@@ -27,7 +28,9 @@ class RAGSettings(BaseSettings):
     EMBEDDING_VECTOR_SIZE: int = 384
     QDRANT_API_KEY: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 indicator_settings = IndicatorSettings()
@@ -42,7 +45,9 @@ class RiskSettings(BaseSettings):
     MAX_PORTFOLIO_EXPOSURE: float = 150000.00
     MAX_SINGLE_ASSET_EXPOSURE: float = 50000.00
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 risk_settings = RiskSettings()
@@ -54,7 +59,9 @@ class ExecutionSettings(BaseSettings):
     MARKET_SERVICE_INTERNAL_URL: str = "http://localhost:8001"
     MARKET_SERVICE_INTERNAL_SECRET: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 execution_settings = ExecutionSettings()

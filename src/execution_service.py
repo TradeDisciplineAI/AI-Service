@@ -8,23 +8,27 @@ Handles the AI-Service side of the execution pipeline:
   - Delegation to market-service for the actual fill
   - TradeProposal status transitions
 """
+
+import json
 import logging
+import urllib.error
+import urllib.request
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import UUID
 
-import urllib.request
-import urllib.error
-import json
-
-from sqlalchemy.orm import Session
+from fastapi import HTTPException
+from fastapi import status as http_status
 from sqlalchemy.exc import IntegrityError
-from fastapi import HTTPException, status as http_status
+from sqlalchemy.orm import Session
 
 from src.config import execution_settings
 from src.database import ExecutionIntent, TradeProposal
-from src.schemas import ExecutionResultResponse, PaperExecutionRequest, PaperExecutionResponse
+from src.schemas import (
+    ExecutionResultResponse,
+    PaperExecutionRequest,
+    PaperExecutionResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,18 +61,20 @@ def _call_market_service(payload: PaperExecutionRequest) -> PaperExecutionRespon
     url = f"{base_url}/internal/paper-executions"
     secret = execution_settings.MARKET_SERVICE_INTERNAL_SECRET
 
-    body = json.dumps({
-        "proposal_id": str(payload.proposal_id),
-        "execution_id": payload.execution_id,
-        "portfolio_id": str(payload.portfolio_id),
-        "user_id": str(payload.user_id),
-        "symbol": payload.symbol,
-        "action": payload.action,
-        "requested_quantity": payload.requested_quantity,
-        "stop_loss": payload.stop_loss,
-        "take_profit": payload.take_profit,
-        "primary_strategy": payload.primary_strategy,
-    }).encode("utf-8")
+    body = json.dumps(
+        {
+            "proposal_id": str(payload.proposal_id),
+            "execution_id": payload.execution_id,
+            "portfolio_id": str(payload.portfolio_id),
+            "user_id": str(payload.user_id),
+            "symbol": payload.symbol,
+            "action": payload.action,
+            "requested_quantity": payload.requested_quantity,
+            "stop_loss": payload.stop_loss,
+            "take_profit": payload.take_profit,
+            "primary_strategy": payload.primary_strategy,
+        }
+    ).encode("utf-8")
 
     headers = {
         "Content-Type": "application/json",
@@ -122,7 +128,9 @@ class ExecutionService:
         9b. On failure → EXECUTION_FAILED, intent → FAILED; raise 502.
         """
         # ── 1. Load proposal ────────────────────────────────────────────────
-        proposal = db.query(TradeProposal).filter(TradeProposal.id == proposal_id).first()
+        proposal = (
+            db.query(TradeProposal).filter(TradeProposal.id == proposal_id).first()
+        )
         if not proposal:
             raise HTTPException(
                 status_code=http_status.HTTP_404_NOT_FOUND,
@@ -183,17 +191,17 @@ class ExecutionService:
         db.add(intent)
         try:
             db.flush()  # flush to catch IntegrityError before commit
-        except IntegrityError:
+        except IntegrityError as exc:
             db.rollback()
             raise HTTPException(
                 status_code=http_status.HTTP_409_CONFLICT,
                 detail="An execution for this proposal is already in progress or has been attempted. "
-                       "Check proposal status before retrying.",
-            )
+                "Check proposal status before retrying.",
+            ) from exc
 
         # ── 7. Transition → EXECUTION_PENDING ────────────────────────────────
         proposal.status = "EXECUTION_PENDING"
-        proposal.updated_at = datetime.now(timezone.utc)
+        proposal.updated_at = datetime.now(UTC)
         db.commit()
         db.refresh(intent)
 
@@ -216,18 +224,20 @@ class ExecutionService:
         try:
             fill = _call_market_service(payload)
         except RuntimeError as e:
-            logger.error("market-service fill failed for proposal %s: %s", proposal_id, e)
+            logger.error(
+                "market-service fill failed for proposal %s: %s", proposal_id, e
+            )
             proposal.status = "EXECUTION_FAILED"
-            proposal.updated_at = datetime.now(timezone.utc)
+            proposal.updated_at = datetime.now(UTC)
             intent.status = "FAILED"
             db.commit()
             raise HTTPException(
                 status_code=http_status.HTTP_502_BAD_GATEWAY,
                 detail=f"Paper execution failed: market-service error — {e}",
-            )
+            ) from e
 
         # ── 9a. Success — finalize ────────────────────────────────────────────
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         proposal.status = "EXECUTED"
         proposal.updated_at = now
         intent.status = "COMPLETED"
@@ -274,6 +284,6 @@ class ExecutionService:
             stop_loss=float(proposal.stop_loss),
             take_profit=float(proposal.take_profit),
             primary_strategy=proposal.primary_strategy,
-            executed_at=intent.completed_at or datetime.now(timezone.utc),
+            executed_at=intent.completed_at or datetime.now(UTC),
             proposal_status="EXECUTED",
         )

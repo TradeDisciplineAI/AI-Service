@@ -1,14 +1,16 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
+
 from src.main import app
-from src.schemas import RAGIngestResponse
-from src.rag.vector_store import QdrantTradeVectorStore, RAGStorageError
 from src.rag.evaluator import RAGEvaluator
-from src.routers.agent6_router import get_vector_store, get_evaluator
+from src.rag.vector_store import QdrantTradeVectorStore, RAGStorageError
+from src.routers.agent6_router import get_evaluator, get_vector_store
 
 client = TestClient(app)
+
 
 @pytest.fixture(autouse=True)
 def override_agent6_dependencies():
@@ -16,7 +18,9 @@ def override_agent6_dependencies():
     Fixtures overriding get_vector_store and get_evaluator with in-memory store for isolated API router testing.
     """
     mem_client = QdrantClient(":memory:")
-    mem_store = QdrantTradeVectorStore(client=mem_client, collection_name="test_router_history")
+    mem_store = QdrantTradeVectorStore(
+        client=mem_client, collection_name="test_router_history"
+    )
     mem_evaluator = RAGEvaluator(vector_store=mem_store)
 
     app.dependency_overrides[get_vector_store] = lambda: mem_store
@@ -39,7 +43,7 @@ def test_agent6_ingest_endpoint_success():
         "pnl_percentage": 2.08,
         "strategy_used": "MomentumBreakout",
         "emotion_note": "Great entry",
-        "timestamp": "2026-08-17T10:00:00Z"
+        "timestamp": "2026-08-17T10:00:00Z",
     }
 
     res = client.post("/agent6/ingest", json=payload)
@@ -62,7 +66,7 @@ def test_agent6_ingest_endpoint_503_on_rag_storage_error():
         "pnl": -200.0,
         "pnl_percentage": -0.83,
         "strategy_used": "MomentumBreakout",
-        "timestamp": "2026-08-17T10:00:00Z"
+        "timestamp": "2026-08-17T10:00:00Z",
     }
 
     mock_store = MagicMock()
@@ -86,7 +90,7 @@ def test_agent6_evaluate_endpoint_success():
         "price_change_pct_24h": 1.0,
         "strategy": "MomentumBreakout",
         "timestamp": "2026-08-17T10:00:00Z",
-        "recent_trades": []
+        "recent_trades": [],
     }
 
     res = client.post("/agent6/evaluate", json=payload)
@@ -107,11 +111,13 @@ def test_agent6_evaluate_endpoint_503_on_rag_storage_error():
         "rsi": 55.0,
         "price_change_pct_24h": 1.0,
         "strategy": "MomentumBreakout",
-        "timestamp": "2026-08-17T10:00:00Z"
+        "timestamp": "2026-08-17T10:00:00Z",
     }
 
     mock_evaluator = MagicMock()
-    mock_evaluator.evaluate_setup.side_effect = RAGStorageError("Qdrant cluster offline")
+    mock_evaluator.evaluate_setup.side_effect = RAGStorageError(
+        "Qdrant cluster offline"
+    )
     app.dependency_overrides[get_evaluator] = lambda: mock_evaluator
 
     res = client.post("/agent6/evaluate", json=payload)

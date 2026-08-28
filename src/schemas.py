@@ -1,23 +1,33 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from enum import Enum
-from uuid import UUID
 from datetime import datetime
+from enum import StrEnum
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
 
 # API Request Blueprint
 class AnalyzeRequest(BaseModel):
     ticker: str
 
+
 class BatchAnalyzeRequest(BaseModel):
-    tickers: List[str]
+    tickers: list[str]
 
 
 # Agent 3 Master REST Request Blueprint
 class Agent3EvaluateRequest(BaseModel):
     ticker: str = Field(description="Stock or Crypto symbol e.g., 'RELIANCE'")
-    market_scan_json: Optional[Dict[str, Any]] = Field(default=None, description="Optional pre-fetched candles or Agent 1 scan output")
-    sentiment_analysis_json: Optional[Dict[str, Any]] = Field(default=None, description="Optional pre-fetched Agent 2 sentiment analysis")
-    rag_context_json: Optional[Dict[str, Any]] = Field(default=None, description="Optional pre-fetched Agent 6 RAG context")
+    market_scan_json: dict[str, Any] | None = Field(
+        default=None, description="Optional pre-fetched candles or Agent 1 scan output"
+    )
+    sentiment_analysis_json: dict[str, Any] | None = Field(
+        default=None, description="Optional pre-fetched Agent 2 sentiment analysis"
+    )
+    rag_context_json: dict[str, Any] | None = Field(
+        default=None, description="Optional pre-fetched Agent 6 RAG context"
+    )
+
 
 # Candle Blueprint
 class OHLCVCandle(BaseModel):
@@ -28,11 +38,13 @@ class OHLCVCandle(BaseModel):
     close: float
     volume: float
 
+
 # MACD Blueprint
 class MACDResult(BaseModel):
     macd_line: float
     signal_line: float
     histogram: float
+
 
 # EMA Blueprint
 class EMAResult(BaseModel):
@@ -40,12 +52,14 @@ class EMAResult(BaseModel):
     ema_21: float
     trend: str  # "BULLISH_CROSS", "BEARISH_CROSS", "UPTREND", "DOWNTREND", "NEUTRAL"
 
+
 # Bollinger Bands Blueprint
 class BollingerBandsResult(BaseModel):
     upper: float
     middle: float
     lower: float
     bandwidth: float
+
 
 # Complete Technical Analysis Output Contract
 class TechnicalIndicatorsResult(BaseModel):
@@ -56,20 +70,23 @@ class TechnicalIndicatorsResult(BaseModel):
     ema: EMAResult
     bollinger: BollingerBandsResult
     atr: float
-    summary: Dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] = Field(default_factory=dict)
+
 
 # Signal Action Enum
-class SignalAction(str, Enum):
+class SignalAction(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
     HOLD = "HOLD"
 
+
 # Auditable Operating Confidence Mode Enum
-class ConfidenceMode(str, Enum):
+class ConfidenceMode(StrEnum):
     FULL_INTEGRATION = "FULL_INTEGRATION"
     RAG_OFFLINE = "RAG_OFFLINE"
     SENTIMENT_OFFLINE = "SENTIMENT_OFFLINE"
     TECHNICAL_ONLY = "TECHNICAL_ONLY"
+
 
 # Individual Strategy Evaluation Output
 class StrategySignal(BaseModel):
@@ -77,6 +94,7 @@ class StrategySignal(BaseModel):
     action: SignalAction
     score: float = Field(ge=0.0, le=1.0)
     reason: str
+
 
 # Master Agent 3 Trade Signal Output Contract
 class TradeSignal(BaseModel):
@@ -91,10 +109,12 @@ class TradeSignal(BaseModel):
     confidence_mode: ConfidenceMode
     required_threshold: float
     primary_strategy: str
-    reasons: List[str] = Field(default_factory=list)
-    technicals_summary: Dict[str, Any] = Field(default_factory=dict)
+    reasons: list[str] = Field(default_factory=list)
+    technicals_summary: dict[str, Any] = Field(default_factory=dict)
+
 
 # === AGENT 6: LEARNING AGENT / RAG SCHEMAS ===
+
 
 class TradeExecutionRecord(BaseModel):
     trade_id: str = Field(description="Unique trade UUID e.g., 'TRD-98124'")
@@ -103,10 +123,16 @@ class TradeExecutionRecord(BaseModel):
     entry_price: float = Field(gt=0.0, description="Actual entry fill price")
     exit_price: float = Field(gt=0.0, description="Actual exit fill price")
     pnl: float = Field(description="Realized PnL amount in currency")
-    pnl_percentage: float = Field(description="Realized PnL percentage e.g., 5.2 or -2.1")
+    pnl_percentage: float = Field(
+        description="Realized PnL percentage e.g., 5.2 or -2.1"
+    )
     strategy_used: str = Field(description="Strategy name e.g., 'MomentumBreakout'")
-    emotion_note: Optional[str] = Field(default=None, description="Optional trader note or mistake flag e.g., 'FOMO buy after spike'")
+    emotion_note: str | None = Field(
+        default=None,
+        description="Optional trader note or mistake flag e.g., 'FOMO buy after spike'",
+    )
     timestamp: str = Field(description="ISO timestamp of trade completion")
+
 
 class RAGIngestResponse(BaseModel):
     status: str = Field(default="stored", description="Ingestion status e.g. 'stored'")
@@ -116,7 +142,7 @@ class RAGIngestResponse(BaseModel):
 
 class TradeProposalCreate(BaseModel):
     user_id: UUID
-    portfolio_id: Optional[UUID] = None
+    portfolio_id: UUID | None = None
     symbol: str
     action: SignalAction
     requested_quantity: int
@@ -131,7 +157,7 @@ class TradeProposalCreate(BaseModel):
 class TradeProposalResponse(BaseModel):
     id: UUID
     user_id: UUID
-    portfolio_id: Optional[UUID] = None
+    portfolio_id: UUID | None = None
     signal_id: str
     symbol: str
     action: SignalAction
@@ -145,28 +171,48 @@ class TradeProposalResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
+
+
 class RAGQueryRequest(BaseModel):
     symbol: str = Field(description="Target stock or crypto symbol e.g., 'RELIANCE'")
     current_price: float = Field(gt=0.0, description="Current market price")
     rsi: float = Field(ge=0.0, le=100.0, description="Current RSI value")
-    price_change_pct_24h: float = Field(default=0.0, description="24h price change percentage e.g. 3.5")
-    strategy: str = Field(default="MomentumBreakout", description="Strategy being evaluated")
+    price_change_pct_24h: float = Field(
+        default=0.0, description="24h price change percentage e.g. 3.5"
+    )
+    strategy: str = Field(
+        default="MomentumBreakout", description="Strategy being evaluated"
+    )
     timestamp: str = Field(description="ISO timestamp of evaluation request")
-    recent_trades: Optional[List[TradeExecutionRecord]] = Field(default=None, description="Optional override for unit testing recent trades")
+    recent_trades: list[TradeExecutionRecord] | None = Field(
+        default=None, description="Optional override for unit testing recent trades"
+    )
+
 
 class RAGContextResponse(BaseModel):
     symbol: str = Field(description="Symbol evaluated")
-    similar_trades_count: int = Field(ge=0, description="Number of similar historical setups retrieved from Qdrant")
-    historical_win_rate: float = Field(ge=0.0, le=1.0, description="Historical win rate ratio")
-    confidence_adjustment: float = Field(ge=-0.30, le=0.20, description="Bounded RAG confidence score adjustment")
-    warning_flag: Optional[str] = Field(default=None, description="Formatted warning text string if win rate < 50% or risks active")
-    mistake_flags: List[str] = Field(default_factory=list, description="List of detected behavioral risk flags e.g. ['REVENGE_TRADING_RISK']")
+    similar_trades_count: int = Field(
+        ge=0, description="Number of similar historical setups retrieved from Qdrant"
+    )
+    historical_win_rate: float = Field(
+        ge=0.0, le=1.0, description="Historical win rate ratio"
+    )
+    confidence_adjustment: float = Field(
+        ge=-0.30, le=0.20, description="Bounded RAG confidence score adjustment"
+    )
+    warning_flag: str | None = Field(
+        default=None,
+        description="Formatted warning text string if win rate < 50% or risks active",
+    )
+    mistake_flags: list[str] = Field(
+        default_factory=list,
+        description="List of detected behavioral risk flags e.g. ['REVENGE_TRADING_RISK']",
+    )
 
 
 # === AGENT 4: RISK EVALUATION SCHEMAS ===
+
 
 class RiskCheckResultSchema(BaseModel):
     check_name: str
@@ -175,6 +221,7 @@ class RiskCheckResultSchema(BaseModel):
     actual_value: str
     limit_value: str
     message: str
+
 
 class RiskEvaluationResponse(BaseModel):
     id: UUID
@@ -185,20 +232,19 @@ class RiskEvaluationResponse(BaseModel):
     estimated_reward: float
     risk_reward_ratio: float
     portfolio_exposure: float
-    checks: List[RiskCheckResultSchema]
-    reasons: List[str]
+    checks: list[RiskCheckResultSchema]
+    reasons: list[str]
     evaluated_at: datetime
 
-    model_config = {
-        "from_attributes": True
-    }
-
+    model_config = {"from_attributes": True}
 
 
 # === AGENT 5: PAPER EXECUTION SCHEMAS ===
 
+
 class PaperExecutionRequest(BaseModel):
     """Payload sent from AI-Service to market-service internal endpoint."""
+
     proposal_id: UUID
     execution_id: str
     portfolio_id: UUID
@@ -213,6 +259,7 @@ class PaperExecutionRequest(BaseModel):
 
 class PaperExecutionResponse(BaseModel):
     """Response from market-service internal fill endpoint."""
+
     execution_id: str
     proposal_id: UUID
     symbol: str
@@ -224,6 +271,7 @@ class PaperExecutionResponse(BaseModel):
 
 class ExecutionResultResponse(BaseModel):
     """Returned by POST /trade-proposals/{id}/execute on success."""
+
     execution_id: str
     proposal_id: UUID
     symbol: str
@@ -237,6 +285,4 @@ class ExecutionResultResponse(BaseModel):
     executed_at: datetime
     proposal_status: str  # "EXECUTED"
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}

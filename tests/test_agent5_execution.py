@@ -19,19 +19,16 @@ Tests cover:
 15. Missing user_id → 400
 """
 
+from datetime import UTC, datetime
+from unittest.mock import patch
+from uuid import uuid4
+
 import pytest
-import json
-import uuid
-from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
-from uuid import uuid4, UUID
-
 from fastapi.testclient import TestClient
-from fastapi import status
 
+from src.database import ExecutionIntent, SessionLocal, TradeProposal
 from src.main import app
-from src.database import SessionLocal, TradeProposal, ExecutionIntent, Base, engine
-from src.schemas import SignalAction, PaperExecutionResponse
+from src.schemas import PaperExecutionResponse
 
 client = TestClient(app)
 
@@ -89,7 +86,7 @@ def _make_fill_response(proposal, exec_id="EXE-TEST1234"):
         action=proposal.action,
         filled_quantity=proposal.requested_quantity,
         execution_price=341.50,  # simulated live price
-        executed_at=datetime.now(timezone.utc),
+        executed_at=datetime.now(UTC),
     )
 
 
@@ -114,7 +111,10 @@ def test_successful_execution(mock_ms, db):
     assert data["requested_quantity"] == 10
     assert data["filled_quantity"] == 10
     assert data["execution_price"] == 341.50
-    assert data["execution_id"].startswith("EXE-") or data["execution_id"] == "EXE-TEST1234"
+    assert (
+        data["execution_id"].startswith("EXE-")
+        or data["execution_id"] == "EXE-TEST1234"
+    )
     assert data["stop_loss"] == 330.0
     assert data["take_profit"] == 358.02
     assert data["primary_strategy"] == "MomentumBreakout"
@@ -167,9 +167,7 @@ def test_wrong_user_rejected(db):
     """A user who does not own the proposal must get 403."""
     proposal = _create_proposal(db, status_val="RISK_APPROVED")
     other_user = uuid4()
-    resp = client.post(
-        f"/trade-proposals/{proposal.id}/execute?user_id={other_user}"
-    )
+    resp = client.post(f"/trade-proposals/{proposal.id}/execute?user_id={other_user}")
     assert resp.status_code == 403
     assert "own" in resp.json()["detail"].lower()
 
@@ -198,9 +196,7 @@ def test_missing_portfolio_rejected(db):
     db.add(proposal)
     db.commit()
 
-    resp = client.post(
-        f"/trade-proposals/{proposal.id}/execute?user_id={uid}"
-    )
+    resp = client.post(f"/trade-proposals/{proposal.id}/execute?user_id={uid}")
     assert resp.status_code == 400
     assert "portfolio" in resp.json()["detail"].lower()
 
@@ -273,10 +269,16 @@ def test_status_transition_to_executed(mock_ms, db):
 
     # Verify DB state
     db.expire_all()
-    db_proposal = db.query(TradeProposal).filter(TradeProposal.id == proposal.id).first()
+    db_proposal = (
+        db.query(TradeProposal).filter(TradeProposal.id == proposal.id).first()
+    )
     assert db_proposal.status == "EXECUTED"
 
-    db_intent = db.query(ExecutionIntent).filter(ExecutionIntent.proposal_id == proposal.id).first()
+    db_intent = (
+        db.query(ExecutionIntent)
+        .filter(ExecutionIntent.proposal_id == proposal.id)
+        .first()
+    )
     assert db_intent is not None
     assert db_intent.status == "COMPLETED"
     assert db_intent.completed_at is not None
@@ -289,7 +291,9 @@ def test_status_transition_to_executed(mock_ms, db):
 def test_market_service_failure(mock_ms, db):
     """On market-service error, proposal must transition to EXECUTION_FAILED."""
     proposal = _create_proposal(db, status_val="RISK_APPROVED")
-    mock_ms.side_effect = RuntimeError("market-service returned HTTP 500: internal error")
+    mock_ms.side_effect = RuntimeError(
+        "market-service returned HTTP 500: internal error"
+    )
 
     resp = client.post(
         f"/trade-proposals/{proposal.id}/execute?user_id={proposal.user_id}"
@@ -299,7 +303,9 @@ def test_market_service_failure(mock_ms, db):
 
     # Verify DB state
     db.expire_all()
-    db_proposal = db.query(TradeProposal).filter(TradeProposal.id == proposal.id).first()
+    db_proposal = (
+        db.query(TradeProposal).filter(TradeProposal.id == proposal.id).first()
+    )
     assert db_proposal.status == "EXECUTION_FAILED"
 
 
@@ -318,7 +324,11 @@ def test_execution_intent_failure_status(mock_ms, db):
     assert resp.status_code == 502
 
     db.expire_all()
-    db_intent = db.query(ExecutionIntent).filter(ExecutionIntent.proposal_id == proposal.id).first()
+    db_intent = (
+        db.query(ExecutionIntent)
+        .filter(ExecutionIntent.proposal_id == proposal.id)
+        .first()
+    )
     assert db_intent is not None
     assert db_intent.status == "FAILED"
 
@@ -377,7 +387,9 @@ def test_no_client_execution_price(mock_ms, db):
 
     # PaperExecutionRequest should have no execution_price attribute
     call_args = mock_ms.call_args[0][0]
-    assert not hasattr(call_args, "execution_price"),         "Client must not supply execution_price — market-service determines live fill price."
+    assert not hasattr(call_args, "execution_price"), (
+        "Client must not supply execution_price — market-service determines live fill price."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -387,9 +399,7 @@ def test_proposal_not_found(db):
     """Executing a non-existent proposal must return 404."""
     fake_id = uuid4()
     fake_user = uuid4()
-    resp = client.post(
-        f"/trade-proposals/{fake_id}/execute?user_id={fake_user}"
-    )
+    resp = client.post(f"/trade-proposals/{fake_id}/execute?user_id={fake_user}")
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"].lower()
 

@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
-from src.schemas import TechnicalIndicatorsResult, StrategySignal
+from typing import Any
+
+from src.schemas import StrategySignal, TechnicalIndicatorsResult
+
 
 class BaseStrategy(ABC):
     @property
@@ -11,9 +13,7 @@ class BaseStrategy(ABC):
 
     @abstractmethod
     def evaluate(
-        self, 
-        technicals: TechnicalIndicatorsResult, 
-        market_scan: Dict[str, Any]
+        self, technicals: TechnicalIndicatorsResult, market_scan: dict[str, Any]
     ) -> StrategySignal:
         """
         Evaluates current technical indicators and market scan flags,
