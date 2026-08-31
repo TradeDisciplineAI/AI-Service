@@ -1,11 +1,21 @@
 import os
 import uuid
+from datetime import UTC, datetime
+
 from sqlalchemy import (
-    create_engine, Column, Integer, String, DateTime, JSON,
-    text, Numeric, UUID, ForeignKey, UniqueConstraint,
+    JSON,
+    UUID,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    create_engine,
+    text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from datetime import datetime, timezone
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 # Connect to Database
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -19,7 +29,9 @@ if DATABASE_URL.startswith("postgresql+asyncpg://"):
 # Engine configuration
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 connect_args = {"check_same_thread": False} if IS_SQLITE else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, pool_recycle=300)
+engine = create_engine(
+    DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, pool_recycle=300
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -36,7 +48,9 @@ class MarketSignals(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True, unique=True)
     scan_data = Column(JSON)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
 
 # Define the Agent 2 AI Analysis Table
@@ -47,7 +61,7 @@ class AIAnalysis(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True)
     analysis_data = Column(JSON)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # Define the Agent 2 Stock News Table
@@ -58,7 +72,7 @@ class StockNews(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True, unique=True)
     headlines = Column(JSON)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # Define the Trade Proposal Table
@@ -81,11 +95,20 @@ class TradeProposal(Base):
     confidence_score = Column(Numeric(5, 4), nullable=False)
     primary_strategy = Column(String, nullable=False)
     status = Column(String, nullable=False, default="PENDING_RISK")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
-    risk_evaluations = relationship("RiskEvaluation", back_populates="proposal", cascade="all, delete-orphan")
-    execution_intent = relationship("ExecutionIntent", back_populates="proposal", uselist=False, cascade="all, delete-orphan")
+    risk_evaluations = relationship(
+        "RiskEvaluation", back_populates="proposal", cascade="all, delete-orphan"
+    )
+    execution_intent = relationship(
+        "ExecutionIntent",
+        back_populates="proposal",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 # Define the Risk Evaluation Table (stores multiple evaluation history records)
@@ -95,7 +118,14 @@ class RiskEvaluation(Base):
         __table_args__ = schema_kwargs
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    proposal_id = Column(UUID(as_uuid=True), ForeignKey(f"{'ai.' if schema_kwargs else ''}trade_proposals.id", ondelete="CASCADE"), nullable=False, index=True)
+    proposal_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            f"{'ai.' if schema_kwargs else ''}trade_proposals.id", ondelete="CASCADE"
+        ),
+        nullable=False,
+        index=True,
+    )
     decision = Column(String, nullable=False)
     risk_score = Column(Integer, nullable=False)
     max_risk = Column(Numeric(18, 4), nullable=False)
@@ -104,7 +134,7 @@ class RiskEvaluation(Base):
     portfolio_exposure = Column(Numeric(18, 4), nullable=False)
     checks = Column(JSON, nullable=False)
     reasons = Column(JSON, nullable=False)
-    evaluated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    evaluated_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     proposal = relationship("TradeProposal", back_populates="risk_evaluations")
 
@@ -125,13 +155,15 @@ class ExecutionIntent(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     proposal_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{'ai.' if schema_kwargs else ''}trade_proposals.id", ondelete="CASCADE"),
+        ForeignKey(
+            f"{'ai.' if schema_kwargs else ''}trade_proposals.id", ondelete="CASCADE"
+        ),
         nullable=False,
         index=True,
         unique=True,
     )
     status = Column(String(20), nullable=False, default="PENDING")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime, nullable=True)
 
     proposal = relationship("TradeProposal", back_populates="execution_intent")
@@ -146,8 +178,8 @@ class MarketPortfolio(Base):
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     name = Column(String, nullable=False)
     type = Column(String, nullable=False, default="PAPER")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class MarketPaperPosition(Base):
@@ -159,8 +191,8 @@ class MarketPaperPosition(Base):
     symbol = Column(String, nullable=False, index=True)
     quantity = Column(Integer, nullable=False)
     average_entry_price = Column(Numeric(18, 4), nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # Create schema and tables logic

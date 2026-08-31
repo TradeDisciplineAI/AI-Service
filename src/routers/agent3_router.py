@@ -1,20 +1,21 @@
 import asyncio
 import logging
-from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Depends
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from src.schemas import Agent3EvaluateRequest, TradeSignal
-from src.agent3_graph import agent3_app
 from src.agent1_graph import agent1_app
 from src.agent2_graph import agent2_app
+from src.agent3_graph import agent3_app
+from src.database import AIAnalysis, MarketSignals, SessionLocal
+from src.schemas import Agent3EvaluateRequest, TradeSignal
 from src.tools.yfinance_tool import fetch_market_data
-from src.database import SessionLocal, MarketSignals, AIAnalysis
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent3", tags=["Agent 3 - Strategy Engine"])
+
 
 def get_db():
     db = SessionLocal()
@@ -23,15 +24,24 @@ def get_db():
     finally:
         db.close()
 
-async def resolve_market_scan(ticker: str, db: Session, provided: Optional[dict]) -> Optional[dict]:
+
+async def resolve_market_scan(
+    ticker: str, db: Session, provided: dict | None
+) -> dict | None:
     """Resolves Agent 1 market scan payload: uses provided dict, DB cached signal, or executes Agent 1 graph with timeout."""
     if provided is not None and isinstance(provided, dict) and "error" not in provided:
         return provided
 
     # Check DB for existing market signal
     try:
-        existing_signal = db.query(MarketSignals).filter(MarketSignals.ticker == ticker).first()
-        if existing_signal and existing_signal.scan_data and "error" not in existing_signal.scan_data:
+        existing_signal = (
+            db.query(MarketSignals).filter(MarketSignals.ticker == ticker).first()
+        )
+        if (
+            existing_signal
+            and existing_signal.scan_data
+            and "error" not in existing_signal.scan_data
+        ):
             logger.info(f"Loaded persisted Agent 1 market scan for {ticker} from DB.")
             return existing_signal.scan_data
     except Exception as e:
@@ -41,13 +51,16 @@ async def resolve_market_scan(ticker: str, db: Session, provided: Optional[dict]
     try:
         logger.info(f"Executing Agent 1 market scanner graph for {ticker}...")
         agent1_res = await asyncio.wait_for(
-            run_in_threadpool(agent1_app.invoke, {"ticker": ticker}),
-            timeout=6.0
+            run_in_threadpool(agent1_app.invoke, {"ticker": ticker}), timeout=6.0
         )
         scan = agent1_res.get("final_scan_json")
         if scan and "error" not in scan:
             try:
-                existing = db.query(MarketSignals).filter(MarketSignals.ticker == ticker).first()
+                existing = (
+                    db.query(MarketSignals)
+                    .filter(MarketSignals.ticker == ticker)
+                    .first()
+                )
                 if existing:
                     existing.scan_data = scan
                 else:
@@ -71,23 +84,34 @@ async def resolve_market_scan(ticker: str, db: Session, provided: Optional[dict]
                 "candles": raw_candles,
                 "breakout_detected": False,
                 "volume_surge": False,
-                "trend_direction": "NEUTRAL"
+                "trend_direction": "NEUTRAL",
             }
     except Exception as e:
         logger.error(f"Direct market data fallback failed for {ticker}: {e}")
 
     return None
 
-async def resolve_sentiment_analysis(ticker: str, db: Session, provided: Optional[dict]) -> Optional[dict]:
+
+async def resolve_sentiment_analysis(
+    ticker: str, db: Session, provided: dict | None
+) -> dict | None:
     """Resolves Agent 2 sentiment analysis payload: uses provided dict, DB cached analysis, or executes Agent 2 graph with timeout."""
     if provided is not None and isinstance(provided, dict) and "error" not in provided:
         return provided
 
     # Check DB for existing analysis
     try:
-        existing_analysis = db.query(AIAnalysis).filter(AIAnalysis.ticker == ticker).first()
-        if existing_analysis and existing_analysis.analysis_data and "error" not in existing_analysis.analysis_data:
-            logger.info(f"Loaded persisted Agent 2 sentiment analysis for {ticker} from DB.")
+        existing_analysis = (
+            db.query(AIAnalysis).filter(AIAnalysis.ticker == ticker).first()
+        )
+        if (
+            existing_analysis
+            and existing_analysis.analysis_data
+            and "error" not in existing_analysis.analysis_data
+        ):
+            logger.info(
+                f"Loaded persisted Agent 2 sentiment analysis for {ticker} from DB."
+            )
             return existing_analysis.analysis_data
     except Exception as e:
         logger.warning(f"Could not load persisted sentiment analysis for {ticker}: {e}")
@@ -96,13 +120,14 @@ async def resolve_sentiment_analysis(ticker: str, db: Session, provided: Optiona
     try:
         logger.info(f"Executing Agent 2 sentiment analyzer graph for {ticker}...")
         agent2_res = await asyncio.wait_for(
-            run_in_threadpool(agent2_app.invoke, {"ticker": ticker}),
-            timeout=6.0
+            run_in_threadpool(agent2_app.invoke, {"ticker": ticker}), timeout=6.0
         )
         analysis = agent2_res.get("final_analysis_json")
         if analysis and "error" not in analysis:
             try:
-                existing = db.query(AIAnalysis).filter(AIAnalysis.ticker == ticker).first()
+                existing = (
+                    db.query(AIAnalysis).filter(AIAnalysis.ticker == ticker).first()
+                )
                 if existing:
                     existing.analysis_data = analysis
                 else:
@@ -120,11 +145,14 @@ async def resolve_sentiment_analysis(ticker: str, db: Session, provided: Optiona
         "ticker": ticker,
         "overall_sentiment": "Neutral",
         "conviction_score": 5,
-        "summary": "Default neutral sentiment fallback."
+        "summary": "Default neutral sentiment fallback.",
     }
 
+
 @router.post("/evaluate", response_model=TradeSignal, status_code=status.HTTP_200_OK)
-async def evaluate_ticker(request: Agent3EvaluateRequest, db: Session = Depends(get_db)):
+async def evaluate_ticker(
+    request: Agent3EvaluateRequest, db: Session = Depends(get_db)
+):
     """
     Evaluates market technicals, multi-strategies, sentiment, and RAG context for a ticker.
     Automatically orchestrates Agent 1 (Market Scan) and Agent 2 (Sentiment) if not explicitly provided.
@@ -135,10 +163,15 @@ async def evaluate_ticker(request: Agent3EvaluateRequest, db: Session = Depends(
 
         # Orchestrate Agent 1 & Agent 2 inputs if missing
         market_scan = await resolve_market_scan(ticker, db, request.market_scan_json)
-        sentiment_analysis = await resolve_sentiment_analysis(ticker, db, request.sentiment_analysis_json)
+        sentiment_analysis = await resolve_sentiment_analysis(
+            ticker, db, request.sentiment_analysis_json
+        )
 
         # Baseline RAG context for Agent 6 integration
-        rag_context = request.rag_context_json or {"confidence_adjustment": 0.0, "notes": "Baseline RAG context"}
+        rag_context = request.rag_context_json or {
+            "confidence_adjustment": 0.0,
+            "notes": "Baseline RAG context",
+        }
 
         # Log Debug Execution Trace
         logger.info(
@@ -155,17 +188,17 @@ async def evaluate_ticker(request: Agent3EvaluateRequest, db: Session = Depends(
             "rag_context_json": rag_context,
             "technicals_json": None,
             "final_trade_signal": None,
-            "errors": []
+            "errors": [],
         }
 
         # Non-blocking async execution of compiled LangGraph workflow
         final_state = await agent3_app.ainvoke(initial_state)
-        
+
         trade_signal_dict = final_state.get("final_trade_signal")
         if not trade_signal_dict:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Agent 3 workflow failed to generate final trade signal for {ticker}."
+                detail=f"Agent 3 workflow failed to generate final trade signal for {ticker}.",
             )
 
         logger.info(
@@ -184,6 +217,5 @@ async def evaluate_ticker(request: Agent3EvaluateRequest, db: Session = Depends(
         logger.error(f"Error processing Agent 3 request for {request.ticker}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal Agent 3 processing error: {str(e)}"
-        )
-
+            detail=f"Internal Agent 3 processing error: {str(e)}",
+        ) from e

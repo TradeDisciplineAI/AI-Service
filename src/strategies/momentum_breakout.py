@@ -1,6 +1,8 @@
-from typing import Dict, Any
+from typing import Any
+
+from src.schemas import SignalAction, StrategySignal, TechnicalIndicatorsResult
 from src.strategies.base_strategy import BaseStrategy
-from src.schemas import TechnicalIndicatorsResult, StrategySignal, SignalAction
+
 
 class MomentumBreakoutStrategy(BaseStrategy):
     @property
@@ -8,9 +10,7 @@ class MomentumBreakoutStrategy(BaseStrategy):
         return "MomentumBreakout"
 
     def evaluate(
-        self, 
-        technicals: TechnicalIndicatorsResult, 
-        market_scan: Dict[str, Any]
+        self, technicals: TechnicalIndicatorsResult, market_scan: dict[str, Any]
     ) -> StrategySignal:
         breakout = market_scan.get("breakout_detected", False)
         volume_surge = market_scan.get("volume_surge", False)
@@ -18,12 +18,16 @@ class MomentumBreakoutStrategy(BaseStrategy):
         rsi = technicals.rsi
 
         is_breakout_or_volume = breakout or volume_surge
-        
+
         is_uptrend = ema_trend in ["UPTREND", "BULLISH_CROSS"]
-        is_healthy_bullish_rsi = 50.0 <= rsi <= 72.0  # Conservative upper buffer below 75
-        
+        is_healthy_bullish_rsi = (
+            50.0 <= rsi <= 72.0
+        )  # Conservative upper buffer below 75
+
         is_downtrend = ema_trend in ["DOWNTREND", "BEARISH_CROSS"]
-        is_healthy_bearish_rsi = 28.0 <= rsi <= 50.0  # Conservative lower buffer above 25
+        is_healthy_bearish_rsi = (
+            28.0 <= rsi <= 50.0
+        )  # Conservative lower buffer above 25
 
         if is_breakout_or_volume and is_uptrend and is_healthy_bullish_rsi:
             reason = (
@@ -34,7 +38,7 @@ class MomentumBreakoutStrategy(BaseStrategy):
                 strategy_name=self.name,
                 action=SignalAction.BUY,
                 score=0.90,
-                reason=reason
+                reason=reason,
             )
 
         if is_breakout_or_volume and is_downtrend and is_healthy_bearish_rsi:
@@ -46,12 +50,12 @@ class MomentumBreakoutStrategy(BaseStrategy):
                 strategy_name=self.name,
                 action=SignalAction.SELL,
                 score=0.90,
-                reason=reason
+                reason=reason,
             )
 
         return StrategySignal(
             strategy_name=self.name,
             action=SignalAction.HOLD,
             score=0.0,
-            reason="Breakout momentum conditions not met."
+            reason="Breakout momentum conditions not met.",
         )
