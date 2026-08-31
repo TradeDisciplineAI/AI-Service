@@ -1,0 +1,26 @@
+# ------------------ Kubernetes Service Definition (AI API) -----------------------
+# Exposes AI-Service pods to internal cluster networking.
+# Maps ClusterIP port 8002 to containerPort 8000 on ai-service-app pods.
+# --------------------------------------------------------------------------
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: ai-service
+  labels:
+    app: ai-service
+    component: service
+spec:
+  type: ClusterIP
+  ports:
+    # ------------------ Internal Port Mapping -----------------------
+    - port: 8002
+      targetPort: 8000
+      protocol: TCP
+      name: http
+
+  # ------------------ Target Pod Selector -----------------------
+  selector:
+    app: ai-service
+    component: api

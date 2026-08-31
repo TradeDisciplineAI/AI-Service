@@ -1,0 +1,42 @@
+# ------------------ Horizontal Pod Autoscaler (HPA) Policy -----------------------
+# Automatically scales AI-Service pod replicas based on real-time CPU & Memory utilization.
+# Scales up to 10 pods during heavy market volatility / high signal scanning traffic,
+# and scales back down to 2 pods during low traffic hours.
+# --------------------------------------------------------------------------
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-service-hpa
+  namespace: ai-service
+  labels:
+    app: ai-service
+    component: autoscaler
+spec:
+  # ------------------ Target Workload Reference -----------------------
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-service-app
+
+  # ------------------ Replica Boundaries -----------------------
+  minReplicas: 2
+  maxReplicas: 10
+
+  # ------------------ Scaling Metric Triggers -----------------------
+  metrics:
+    # ------------------ Trigger 1: CPU Utilization Threshold -----------------------
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # ------------------ Trigger 2: Memory Utilization Threshold -----------------------
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75

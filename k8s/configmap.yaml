@@ -1,0 +1,32 @@
+# ------------------ Kubernetes ConfigMap Configuration -----------------------
+# ConfigMaps hold non-sensitive configuration parameters.
+# These environment variables are injected into AI-Service API containers at startup.
+# --------------------------------------------------------------------------
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-service-config
+  namespace: ai-service
+  labels:
+    app: ai-service
+    component: config
+data:
+  # ------------------ Application Environment Settings -----------------------
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  PORT: "8000"
+  HOST: "0.0.0.0"
+
+  # ------------------ AI Model & LLM Settings -----------------------
+  GEMINI_MODEL: "gemini-2.5-flash"
+  MAX_SENTIMENT_CONTEXT_LENGTH: "5000"
+
+  # ------------------ Qdrant Vector DB Host Configuration -----------------------
+  # Matches the ClusterIP Service name defined in qdrant-service.yaml
+  QDRANT_HOST: "ai-qdrant"
+  QDRANT_PORT: "6333"
+  QDRANT_COLLECTION_NAME: "trader_discipline_memory"
+
+  # ------------------ Security Allowed Hosts -----------------------
+  ALLOWED_HOSTS: "ai-service,ai_app,localhost,127.0.0.1,host.docker.internal,*"

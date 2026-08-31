@@ -1,0 +1,74 @@
+# ------------------ Kubernetes AI-Service API Deployment -----------------------
+# Deployment manifest for the main AI-Service FastAPI application running Agents 1-6.
+# Configures 3 initial pod replicas, CPU/Memory resource constraints for AI workloads,
+# environment injections, and self-healing Liveness & Readiness health probes.
+# --------------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service-app
+  namespace: ai-service
+  labels:
+    app: ai-service
+    component: api
+spec:
+  # ------------------ Replica Count & Pod Selection -----------------------
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-service
+      component: api
+  template:
+    metadata:
+      labels:
+        app: ai-service
+        component: api
+    spec:
+      containers:
+        # ------------------ Main FastAPI AI Engine Container -----------------------
+        - name: ai-service
+          image: ai-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+
+          # ------------------ Environment Variable References -----------------------
+          envFrom:
+            - configMapRef:
+                name: ai-service-config
+            - secretRef:
+                name: ai-service-secret
+
+          # ------------------ Resource Allocations & Limits -----------------------
+          # Grants higher CPU/RAM allocations to handle parallel LLM & Technical indicator math
+          resources:
+            requests:
+              cpu: 300m
+              memory: 512Mi
+            limits:
+              cpu: 750m
+              memory: 1Gi
+
+          # ------------------ Self-Healing Liveness Probe -----------------------
+          # Restarts pod automatically if /health fails 3 consecutive times
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # ------------------ Traffic Readiness Probe -----------------------
+          # Ensures traffic is routed only after Agents and models finish initialization
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
