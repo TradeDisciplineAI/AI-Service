@@ -1,0 +1,56 @@
+# ------------------ Kubernetes Qdrant Vector DB StatefulSet -----------------------
+# StatefulSet manifest for Qdrant Vector Database (used by Agent 6 for trader discipline memory).
+# StatefulSets guarantee persistent storage (PVC) and stable network identifiers across pod restarts.
+# --------------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ai-qdrant
+  namespace: ai-service
+  labels:
+    app: ai-service
+    component: qdrant-vector-db
+spec:
+  serviceName: "ai-qdrant"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-service
+      component: qdrant-vector-db
+  template:
+    metadata:
+      labels:
+        app: ai-service
+        component: qdrant-vector-db
+    spec:
+      containers:
+        # ------------------ Qdrant Engine Container Specs -----------------------
+        - name: qdrant
+          image: qdrant/qdrant:latest
+          ports:
+            - containerPort: 6333
+              name: http
+            - containerPort: 6334
+              name: grpc
+          volumeMounts:
+            - name: qdrant-storage
+              mountPath: /qdrant/storage
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+
+  # ------------------ Persistent Volume Claim Templates -----------------------
+  # Allocates 10GB persistent storage for vector trade embeddings
+  volumeClaimTemplates:
+    - metadata:
+        name: qdrant-storage
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
