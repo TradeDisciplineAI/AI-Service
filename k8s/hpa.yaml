@@ -21,7 +21,7 @@ spec:
 
   # ------------------ Replica Boundaries -----------------------
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 4
 
   # ------------------ Scaling Metric Triggers -----------------------
   metrics:

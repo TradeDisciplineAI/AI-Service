@@ -31,8 +31,8 @@ spec:
       containers:
         # ------------------ Main FastAPI AI Engine Container -----------------------
         - name: ai-service
-          image: ai-service:latest
-          imagePullPolicy: Never
+          image: tradingacr.azurecr.io/ai-service:v1.0.0
+          imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

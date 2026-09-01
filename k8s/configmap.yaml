@@ -28,5 +28,8 @@ data:
   QDRANT_PORT: "6333"
   QDRANT_COLLECTION_NAME: "trader_discipline_memory"
 
+  # ------------------ Market Service Inter-Service Integration -----------------------
+  MARKET_SERVICE_INTERNAL_URL: "http://market-service.market-service.svc.cluster.local:8001"
+
   # ------------------ Security Allowed Hosts -----------------------
-  ALLOWED_HOSTS: "ai-service,ai_app,localhost,127.0.0.1,host.docker.internal,*"
+  ALLOWED_HOSTS: "ai-service,ai_app,localhost,127.0.0.1,ai-service.ai-service.svc.cluster.local,*"
