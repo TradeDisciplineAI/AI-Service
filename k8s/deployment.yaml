@@ -25,11 +25,20 @@ spec:
         app: ai-service
         component: api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
       containers:
         # ------------------ Main FastAPI AI Engine Container -----------------------
         - name: ai-service
           image: ai-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8000
               name: http
