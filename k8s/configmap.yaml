@@ -33,3 +33,6 @@ data:
 
   # ------------------ Security Allowed Hosts -----------------------
   ALLOWED_HOSTS: "ai-service,ai_app,localhost,127.0.0.1,ai-service.ai-service.svc.cluster.local,*"
+
+  # ------------------ Security Allowed Origins for CORS -----------------------
+  ALLOWED_ORIGINS: '["http://localhost:3000","http://localhost:5173","http://localhost:8000","http://localhost:5175","https://tradingcopilot.vercel.app","https://tradingcopilot.duckdns.org"]'

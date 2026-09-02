@@ -4,7 +4,9 @@ FastAPI application entrypoint for the AI Service orchestrating autonomous Tradi
 Configures CORS middleware, mounts API routers, and exposes service health endpoints.
 """
 
+import json
 import logging
+import os
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -22,14 +24,28 @@ logging.basicConfig(level=logging.INFO)
 # ------------------ FastAPI Application Instance -----------------------
 app = FastAPI(title="AI Trading Service API (Agents 1-6)")
 
+DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5175",
+    "https://tradingcopilot.vercel.app",
+    "https://tradingcopilot.duckdns.org",
+]
+
+raw_origins = os.getenv("ALLOWED_ORIGINS")
+if raw_origins:
+    try:
+        allowed_origins = json.loads(raw_origins)
+    except Exception:
+        allowed_origins = DEFAULT_ORIGINS
+else:
+    allowed_origins = DEFAULT_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
