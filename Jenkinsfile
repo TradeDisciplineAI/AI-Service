@@ -141,7 +141,7 @@ pipeline {
                     echo 'Running linter, import sorter, and code analysis...'
                     echo 'Executing: ruff check (generating ruff-log.txt in pylint format)'
                     try {
-                        sh "docker compose -f docker-compose.yml run --name ai_ruff_${env.BUILD_NUMBER} ${env.APP_SERVICE} uv run ruff check --output-format=pylint --output-file=${env.REPORTS_DIR}/ruff-log.txt src tests"
+                        sh "docker compose -f docker-compose.yml run --name ai_ruff_${env.BUILD_NUMBER} ${env.APP_SERVICE} bash -c 'mkdir -p ${env.REPORTS_DIR} && uv run ruff check --output-format=pylint --output-file=${env.REPORTS_DIR}/ruff-log.txt src tests'"
                     } finally {
                         sh """
                             mkdir -p "${env.WORKSPACE}/${env.REPORTS_DIR}"
@@ -161,7 +161,7 @@ pipeline {
                     echo 'Executing strict type check checks...'
                     echo 'Executing: mypy src (generating mypy-log.txt)'
                     try {
-                        sh "docker compose -f docker-compose.yml run --name ai_mypy_${env.BUILD_NUMBER} ${env.APP_SERVICE} bash -c 'set -o pipefail && uv run mypy src | tee ${env.REPORTS_DIR}/mypy-log.txt'"
+                        sh "docker compose -f docker-compose.yml run --name ai_mypy_${env.BUILD_NUMBER} ${env.APP_SERVICE} bash -c 'mkdir -p ${env.REPORTS_DIR} && set -o pipefail && uv run mypy src | tee ${env.REPORTS_DIR}/mypy-log.txt'"
                     } finally {
                         sh """
                             mkdir -p "${env.WORKSPACE}/${env.REPORTS_DIR}"
@@ -183,7 +183,7 @@ pipeline {
                     echo 'Output Format: SARIF'
                     echo "Report Location: ${env.REPORTS_DIR}/semgrep.sarif"
                     try {
-                        sh "docker compose -f docker-compose.yml run --name ai_semgrep_${env.BUILD_NUMBER} ${env.APP_SERVICE} uv run semgrep --config=auto --sarif --output=${env.REPORTS_DIR}/semgrep.sarif || true"
+                        sh "docker compose -f docker-compose.yml run --name ai_semgrep_${env.BUILD_NUMBER} ${env.APP_SERVICE} bash -c 'mkdir -p ${env.REPORTS_DIR} && uv run semgrep --config=auto --sarif --output=${env.REPORTS_DIR}/semgrep.sarif || true'"
                     } finally {
                         sh """
                             mkdir -p "${env.WORKSPACE}/${env.REPORTS_DIR}"
@@ -269,7 +269,7 @@ pipeline {
                                 -e DATABASE_URL='${env.TEST_DATABASE_URL}' \
                                 -e TEST_DATABASE_URL='${env.TEST_DATABASE_URL}' \
                                 ${env.APP_SERVICE} \
-                                bash -c 'uv run pytest --junitxml=${env.REPORTS_DIR}/junit.xml --cov=src --cov-report=xml:${env.REPORTS_DIR}/coverage.xml --cov-report=html:${env.REPORTS_DIR}/htmlcov tests/'
+                                bash -c 'mkdir -p ${env.REPORTS_DIR} && uv run pytest --junitxml=${env.REPORTS_DIR}/junit.xml --cov=src --cov-report=xml:${env.REPORTS_DIR}/coverage.xml --cov-report=html:${env.REPORTS_DIR}/htmlcov tests/'
                         """
                     } finally {
                         sh """
