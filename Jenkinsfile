@@ -68,6 +68,7 @@ pipeline {
                     sh "mkdir -p ${env.REPORTS_DIR}/junit"
                     sh "mkdir -p ${env.REPORTS_DIR}/coverage"
                     sh "mkdir -p ${env.REPORTS_DIR}/htmlcov"
+                    sh "cp .env.example .env || touch .env"
                     echo 'Workspace preparation succeeded.'
                 }
             }
