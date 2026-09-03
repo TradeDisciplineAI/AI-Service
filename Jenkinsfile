@@ -276,7 +276,7 @@ pipeline {
                             mkdir -p "${env.WORKSPACE}/${env.REPORTS_DIR}"
                             docker cp "ai_pytest_${env.BUILD_NUMBER}:/app/${env.REPORTS_DIR}/junit.xml" "${env.WORKSPACE}/${env.REPORTS_DIR}/junit.xml" || true
                             docker cp "ai_pytest_${env.BUILD_NUMBER}:/app/${env.REPORTS_DIR}/coverage.xml" "${env.WORKSPACE}/${env.REPORTS_DIR}/coverage.xml" || true
-                            docker cp "ai_pytest_${env.BUILD_NUMBER}:/app/${env.REPORTS_DIR}/htmlcov" "${env.WORKSPACE}/${env.REPORTS_DIR}/htmlcov" || true
+                            docker cp "ai_pytest_${env.BUILD_NUMBER}:/app/${env.REPORTS_DIR}/htmlcov" "${env.WORKSPACE}/${env.REPORTS_DIR}/" || true
                         """
                         sh "docker rm -f ai_pytest_${env.BUILD_NUMBER} || true"
                     }
