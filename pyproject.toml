@@ -33,6 +33,7 @@ dependencies = [
     "mypy>=1.10.0",
     "pre-commit>=3.7.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "semgrep>=1.68.0",
 ]
 
 [tool.ruff]

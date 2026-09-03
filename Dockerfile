@@ -13,15 +13,17 @@ RUN addgroup --system appgroup && \
     adduser --system --ingroup appgroup appuser
 
 # Copy project definition and files
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 COPY src /app/src
 COPY tests /app/tests
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
 
-# Install all project dependencies using uv
-RUN uv pip install --system -e .
+# Install all project dependencies using uv into .venv
+RUN uv sync
+RUN chown -R appuser:appgroup /app
 
+ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 ENV NUMBA_DISABLE_JIT=1
