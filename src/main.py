@@ -11,6 +11,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from src.routers.agent3_router import router as agent3_router
 from src.routers.agent6_router import router as agent6_router
@@ -23,6 +24,9 @@ logging.basicConfig(level=logging.INFO)
 
 # ------------------ FastAPI Application Instance -----------------------
 app = FastAPI(title="AI Trading Service API (Agents 1-6)")
+
+# Instrument FastAPI HTTP metrics and expose GET /metrics endpoint
+Instrumentator().instrument(app).expose(app)
 
 DEFAULT_ORIGINS = [
     "http://localhost:5173",

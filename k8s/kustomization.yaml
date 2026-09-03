@@ -11,4 +11,5 @@ resources:
   - qdrant-service.yaml
   - deployment.yaml
   - service.yaml
+  - servicemonitor.yaml
   - hpa.yaml
