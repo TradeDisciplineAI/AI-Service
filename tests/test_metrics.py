@@ -12,7 +12,10 @@ async def test_metrics_endpoint() -> None:
     ) as ac:
         response = await ac.get("/metrics")
         assert response.status_code == 200
-        assert "http_requests_total" in response.text or "process_cpu_seconds_total" in response.text
+        assert (
+            "http_requests_total" in response.text
+            or "process_cpu_seconds_total" in response.text
+        )
 
 
 @pytest.mark.asyncio
