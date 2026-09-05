@@ -1,40 +1,68 @@
-import uuid
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+import uuid
+from typing import Any
+
 from src.schemas import (
-    TechnicalIndicatorsResult, 
-    TradeSignal, 
-    SignalAction, 
-    ConfidenceMode, 
-    StrategySignal
+    ConfidenceMode,
+    SignalAction,
+    StrategySignal,
+    TechnicalIndicatorsResult,
+    TradeSignal,
 )
 from src.strategies.base_strategy import BaseStrategy
-from src.strategies.momentum_breakout import MomentumBreakoutStrategy
-from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.ema_crossover import EMACrossoverStrategy
+from src.strategies.mean_reversion import MeanReversionStrategy
+from src.strategies.momentum_breakout import MomentumBreakoutStrategy
 
 logger = logging.getLogger(__name__)
 
 # Strategy Priority for Deterministic Tie-Breaking
-STRATEGY_PRIORITY = {
-    "MomentumBreakout": 1,
-    "MeanReversion": 2,
-    "EMACrossover": 3
-}
+STRATEGY_PRIORITY = {"MomentumBreakout": 1, "MeanReversion": 2, "EMACrossover": 3}
+
+
+def validate_target_invariants(
+    action: SignalAction, entry_price: float, stop_loss: float, take_profit: float
+) -> tuple[bool, str]:
+    """
+    Validates directional price structures:
+      - BUY:  stop_loss < entry_price < take_profit
+      - SELL: take_profit < entry_price < stop_loss
+    """
+    if entry_price <= 0 or stop_loss <= 0 or take_profit <= 0:
+        return (
+            False,
+            "Price targets (entry_price, stop_loss, take_profit) must be positive values.",
+        )
+
+    if action == SignalAction.BUY:
+        if not (stop_loss < entry_price < take_profit):
+            return (
+                False,
+                f"Invalid BUY price structure: stop loss ({stop_loss}) must be below entry ({entry_price}), which must be below take profit ({take_profit}).",
+            )
+    elif action == SignalAction.SELL:
+        if not (take_profit < entry_price < stop_loss):
+            return (
+                False,
+                f"Invalid SELL price structure: take profit ({take_profit}) must be below entry ({entry_price}), which must be below stop loss ({stop_loss}).",
+            )
+    else:
+        return False, "Action must be BUY or SELL for trade proposal."
+
+    return True, ""
+
 
 class StrategyEvaluator:
-    def __init__(self, strategies: Optional[List[BaseStrategy]] = None):
+    def __init__(self, strategies: list[BaseStrategy] | None = None):
         self.strategies = strategies or [
             MomentumBreakoutStrategy(),
             MeanReversionStrategy(),
-            EMACrossoverStrategy()
+            EMACrossoverStrategy(),
         ]
 
     def _detect_input_availability(
-        self, 
-        sentiment: Optional[Dict[str, Any]], 
-        rag_context: Optional[Dict[str, Any]]
-    ) -> Tuple[bool, bool, ConfidenceMode, float, Dict[str, float], float, float]:
+        self, sentiment: dict[str, Any] | None, rag_context: dict[str, Any] | None
+    ) -> tuple[bool, bool, ConfidenceMode, float, dict[str, float], float, float]:
         """
         Detects availability and normalizes Agent 2 (Sentiment) and Agent 6 (RAG) inputs.
         Supports both:
@@ -44,28 +72,36 @@ class StrategyEvaluator:
         """
         has_sentiment = False
         norm_sentiment = 0.50  # Neutral fallback
-        
+
         if (
-            sentiment is not None 
-            and isinstance(sentiment, dict) 
+            sentiment is not None
+            and isinstance(sentiment, dict)
             and "error" not in sentiment
         ):
             # Check for sentiment_score (-1.0 to +1.0) or conviction_score (1 to 10)
-            if "sentiment_score" in sentiment and sentiment["sentiment_score"] is not None:
+            if (
+                "sentiment_score" in sentiment
+                and sentiment["sentiment_score"] is not None
+            ):
                 has_sentiment = True
                 clamped_score = max(-1.0, min(1.0, float(sentiment["sentiment_score"])))
                 norm_sentiment = (clamped_score + 1.0) / 2.0
-            elif "conviction_score" in sentiment and sentiment["conviction_score"] is not None:
+            elif (
+                "conviction_score" in sentiment
+                and sentiment["conviction_score"] is not None
+            ):
                 has_sentiment = True
-                clamped_conviction = max(0.0, min(10.0, float(sentiment["conviction_score"])))
+                clamped_conviction = max(
+                    0.0, min(10.0, float(sentiment["conviction_score"]))
+                )
                 norm_sentiment = clamped_conviction / 10.0
 
         has_rag = False
         norm_rag = 0.50  # Neutral fallback
-        
+
         if (
-            rag_context is not None 
-            and isinstance(rag_context, dict) 
+            rag_context is not None
+            and isinstance(rag_context, dict)
             and "error" not in rag_context
         ):
             rag_adj = rag_context.get("confidence_adjustment")
@@ -93,14 +129,75 @@ class StrategyEvaluator:
             threshold = 0.80
             weights = {"ta": 1.000, "sentiment": 0.0, "rag": 0.0}
 
-        return has_sentiment, has_rag, mode, threshold, weights, norm_sentiment, norm_rag
+        return (
+            has_sentiment,
+            has_rag,
+            mode,
+            threshold,
+            weights,
+            norm_sentiment,
+            norm_rag,
+        )
+
+    def calculate_target_prices(
+        self, action: SignalAction, entry_price: float, atr: float
+    ) -> tuple[float, float, float]:
+        """
+        Calculates stop_loss, take_profit, and risk_reward_ratio direction-aware.
+        Enforces:
+          - BUY:  stop_loss < entry_price < take_profit
+          - SELL: take_profit < entry_price < stop_loss
+        """
+        if entry_price <= 0:
+            raise ValueError("Entry price must be positive and greater than zero.")
+        if atr <= 0:
+            raise ValueError("ATR must be positive and greater than zero.")
+
+        risk_distance = round(1.5 * atr, 2)
+        if risk_distance <= 0:
+            raise ValueError("Calculated risk distance must be greater than zero.")
+
+        if action == SignalAction.SELL:
+            stop_loss = round(entry_price + risk_distance, 2)
+            risk = round(stop_loss - entry_price, 2)
+            if risk <= 0:
+                raise ValueError("Calculated risk must be greater than zero.")
+
+            reward = round(2.0 * risk, 2)
+            take_profit = round(entry_price - reward, 2)
+
+            is_valid, err_msg = validate_target_invariants(
+                action, entry_price, stop_loss, take_profit
+            )
+            if not is_valid:
+                raise ValueError(err_msg)
+
+            risk_reward_ratio = round(reward / risk, 2)
+        else:  # Default to BUY
+            stop_loss = round(entry_price - risk_distance, 2)
+            risk = round(entry_price - stop_loss, 2)
+            if risk <= 0:
+                raise ValueError("Calculated risk must be greater than zero.")
+
+            reward = round(2.0 * risk, 2)
+            take_profit = round(entry_price + reward, 2)
+
+            is_valid, err_msg = validate_target_invariants(
+                action, entry_price, stop_loss, take_profit
+            )
+            if not is_valid:
+                raise ValueError(err_msg)
+
+            risk_reward_ratio = round(reward / risk, 2)
+
+        return stop_loss, take_profit, risk_reward_ratio
 
     def evaluate_all(
         self,
         technicals: TechnicalIndicatorsResult,
-        market_scan: Dict[str, Any],
-        sentiment_analysis: Optional[Dict[str, Any]] = None,
-        rag_context: Optional[Dict[str, Any]] = None
+        market_scan: dict[str, Any],
+        sentiment_analysis: dict[str, Any] | None = None,
+        rag_context: dict[str, Any] | None = None,
     ) -> TradeSignal:
         """
         Master Agent 3 Evaluator:
@@ -115,14 +212,17 @@ class StrategyEvaluator:
         atr = technicals.atr
 
         # 1. Evaluate All Strategies
-        strategy_signals: List[StrategySignal] = []
-        active_signals: List[StrategySignal] = []
+        strategy_signals: list[StrategySignal] = []
+        active_signals: list[StrategySignal] = []
 
         for strat in self.strategies:
             try:
                 sig = strat.evaluate(technicals, market_scan)
                 strategy_signals.append(sig)
-                if sig.action == SignalAction.BUY and sig.score > 0.0:
+                if (
+                    sig.action in [SignalAction.BUY, SignalAction.SELL]
+                    and sig.score > 0.0
+                ):
                     active_signals.append(sig)
             except Exception as e:
                 logger.error(f"Error evaluating strategy {strat.name}: {e}")
@@ -144,49 +244,72 @@ class StrategyEvaluator:
             reasons.append(winning_sig.reason)
 
         # 3. Detect Mode, Renormalized Weights, and Required Threshold
-        (
-            has_sent, 
-            has_rag, 
-            mode, 
-            threshold, 
-            weights, 
-            norm_sentiment, 
-            norm_rag
-        ) = self._detect_input_availability(sentiment_analysis, rag_context)
+        (has_sent, has_rag, mode, threshold, weights, norm_sentiment, norm_rag) = (
+            self._detect_input_availability(sentiment_analysis, rag_context)
+        )
 
         # 4. Compute Composite Confidence Score
         confidence_final = (
-            (weights["ta"] * score_ta) +
-            (weights["sentiment"] * norm_sentiment) +
-            (weights["rag"] * norm_rag)
+            (weights["ta"] * score_ta)
+            + (weights["sentiment"] * norm_sentiment)
+            + (weights["rag"] * norm_rag)
         )
         confidence_final = max(0.0, min(1.0, round(confidence_final, 4)))
 
         # 5. Target Price Math (1.5x ATR Stop Loss & 1:2 R:R Take Profit)
-        stop_loss = round(entry_price - (1.5 * atr), 2)
-        risk_amount = entry_price - stop_loss
-        if risk_amount <= 0:
-            risk_amount = max(entry_price * 0.005, 0.01)
-            stop_loss = round(entry_price - risk_amount, 2)
+        target_action = SignalAction.BUY
+        if active_signals and active_signals[0].action == SignalAction.SELL:
+            target_action = SignalAction.SELL
 
-        take_profit = round(entry_price + (2.0 * risk_amount), 2)
-        risk_reward_ratio = round((take_profit - entry_price) / (entry_price - stop_loss), 2)
+        target_pricing_failed = False
+        try:
+            stop_loss, take_profit, risk_reward_ratio = self.calculate_target_prices(
+                action=target_action, entry_price=entry_price, atr=atr
+            )
+        except Exception as e:
+            logger.error(f"Target pricing calculation failed for {symbol}: {e}")
+            stop_loss = round(entry_price, 2)
+            take_profit = round(entry_price, 2)
+            risk_reward_ratio = 0.0
+            target_pricing_failed = True
+            reasons.append(f"Target pricing calculation failed: {str(e)}")
 
         # 6. Execution Gate (Confidence >= Threshold AND R:R >= 1.5)
         is_confidence_passed = confidence_final >= threshold
         is_rr_passed = risk_reward_ratio >= 1.5
 
-        if active_signals and is_confidence_passed and is_rr_passed:
-            final_action = SignalAction.BUY
-            reasons.append(f"Confidence score {confidence_final:.2f} met required threshold ({threshold:.2f}) under mode {mode.value}.")
+        if (
+            active_signals
+            and is_confidence_passed
+            and is_rr_passed
+            and not target_pricing_failed
+        ):
+            final_action = active_signals[0].action
+            reasons.append(
+                f"Confidence score {confidence_final:.2f} met required threshold ({threshold:.2f}) under mode {mode.value}."
+            )
         else:
             final_action = SignalAction.HOLD
             if not active_signals:
                 reasons.append("Filtered to HOLD: No strategy triggered.")
+            elif target_pricing_failed:
+                reasons.append("Filtered to HOLD: Target pricing calculation failed.")
             elif not is_confidence_passed:
-                reasons.append(f"Filtered to HOLD: Confidence ({confidence_final:.2f}) below required threshold ({threshold:.2f}) for mode {mode.value}.")
+                reasons.append(
+                    f"Filtered to HOLD: Confidence ({confidence_final:.2f}) below required threshold ({threshold:.2f}) for mode {mode.value}."
+                )
             elif not is_rr_passed:
-                reasons.append(f"Filtered to HOLD: Risk:Reward ({risk_reward_ratio:.2f}) below 1.5 minimum limit.")
+                reasons.append(
+                    f"Filtered to HOLD: Risk:Reward ({risk_reward_ratio:.2f}) below 1.5 minimum limit."
+                )
+
+        # 7. Defensive Validation / Invariant check before returning
+        is_valid, _ = validate_target_invariants(
+            final_action, entry_price, stop_loss, take_profit
+        )
+        if not is_valid and final_action in [SignalAction.BUY, SignalAction.SELL]:
+            final_action = SignalAction.HOLD
+            reasons.append("Filtered to HOLD: Invalid target price structure detected.")
 
         signal_id = f"SIG-{uuid.uuid4().hex[:8].upper()}"
 
@@ -208,6 +331,6 @@ class StrategyEvaluator:
                 "ema_trend": technicals.ema.trend,
                 "macd_histogram": technicals.macd.histogram,
                 "bollinger_bandwidth": technicals.bollinger.bandwidth,
-                "atr": technicals.atr
-            }
+                "atr": technicals.atr,
+            },
         )

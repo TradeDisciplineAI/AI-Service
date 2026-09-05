@@ -1,0 +1,26 @@
+# ------------------ Kubernetes Qdrant Vector DB Service Definition -----------------------
+# Exposes Qdrant Vector DB on internal DNS hostname 'ai-qdrant' ports 6333 (HTTP) and 6334 (gRPC).
+# --------------------------------------------------------------------------
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-qdrant
+  namespace: ai-service
+  labels:
+    app: ai-service
+    component: qdrant-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6333
+      targetPort: 6333
+      protocol: TCP
+      name: http
+    - port: 6334
+      targetPort: 6334
+      protocol: TCP
+      name: grpc
+  selector:
+    app: ai-service
+    component: qdrant-vector-db

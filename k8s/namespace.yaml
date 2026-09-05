@@ -1,0 +1,13 @@
+# ------------------ Kubernetes Namespace Definition -----------------------
+# This file creates an isolated logical space inside the Kubernetes cluster 
+# dedicated to all workloads, storage, and services belonging to AI-Service.
+# --------------------------------------------------------------------------
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-service
+  labels:
+    name: ai-service
+    app.kubernetes.io/name: ai-service
+    app.kubernetes.io/part-of: ai-trading-platform

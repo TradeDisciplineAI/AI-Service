@@ -1,0 +1,38 @@
+# ------------------ Kubernetes ConfigMap Configuration -----------------------
+# ConfigMaps hold non-sensitive configuration parameters.
+# These environment variables are injected into AI-Service API containers at startup.
+# --------------------------------------------------------------------------
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-service-config
+  namespace: ai-service
+  labels:
+    app: ai-service
+    component: config
+data:
+  # ------------------ Application Environment Settings -----------------------
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  PORT: "8000"
+  HOST: "0.0.0.0"
+
+  # ------------------ AI Model & LLM Settings -----------------------
+  GEMINI_MODEL: "gemini-2.5-flash"
+  MAX_SENTIMENT_CONTEXT_LENGTH: "5000"
+
+  # ------------------ Qdrant Vector DB Host Configuration -----------------------
+  # Matches the ClusterIP Service name defined in qdrant-service.yaml
+  QDRANT_HOST: "ai-qdrant"
+  QDRANT_PORT: "6333"
+  QDRANT_COLLECTION_NAME: "trader_discipline_memory"
+
+  # ------------------ Market Service Inter-Service Integration -----------------------
+  MARKET_SERVICE_INTERNAL_URL: "http://market-service.market-service.svc.cluster.local:8001"
+
+  # ------------------ Security Allowed Hosts -----------------------
+  ALLOWED_HOSTS: "ai-service,ai_app,localhost,127.0.0.1,ai-service.ai-service.svc.cluster.local,*"
+
+  # ------------------ Security Allowed Origins for CORS -----------------------
+  ALLOWED_ORIGINS: '["http://localhost:3000","http://localhost:5173","http://localhost:8000","http://localhost:5175","https://tradingcopilot.vercel.app","https://tradingcopilot.duckdns.org"]'

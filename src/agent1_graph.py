@@ -1,30 +1,33 @@
-import logging
 import json
-from langgraph.graph import StateGraph, END
-from langchain_google_genai import ChatGoogleGenerativeAI
+import logging
+
 from langchain_core.messages import HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.graph import END, StateGraph
 
 from src.models import Agent1State
 from src.tools.yfinance_tool import fetch_market_data
 
 logger = logging.getLogger(__name__)
 
-llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.1)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
+
 
 def gather_market_node(state: Agent1State):
     ticker = state["ticker"]
-    
+
     # Tool now returns a dictionary
     data_dict = fetch_market_data(ticker)
-    
-    return {"market_data": data_dict} # Save the dict to the state
+
+    return {"market_data": data_dict}  # Save the dict to the state
+
 
 def analyze_market_node(state: Agent1State):
     ticker = state["ticker"]
-    
+
     # Extract the dictionary from state
-    market_dict = state.get('market_data', {})
-    
+    market_dict = state.get("market_data", {})
+
     # If the tool failed, skip AI analysis
     if "error" in market_dict:
         return {"final_scan_json": {"error": market_dict["error"]}}
@@ -36,13 +39,13 @@ def analyze_market_node(state: Agent1State):
     3. Estimate the nearest Key Support and Resistance price levels based on the highs and lows.
     
     [RECENT CANDLES]
-    {market_dict.get('text_for_ai')}
+    {market_dict.get("text_for_ai")}
     """
-    
+
     # We ask the AI ONLY for the boolean flags (True/False)
-    schema_prompt = f"""
+    schema_prompt = """
     Return ONLY a valid JSON object matching this format:
-    {{
+    {
         "breakout_detected": true,
         "volume_surge": true,
         "reversal_detected": false,
@@ -50,31 +53,57 @@ def analyze_market_node(state: Agent1State):
         "key_support_level": 0.00,
         "key_resistance_level": 0.00,
         "summary": "Short explanation."
-    }}
+    }
     """
-    
-    response = llm.invoke([
-        HumanMessage(content=system_prompt),
-        HumanMessage(content=schema_prompt)
-    ])
-    
+
+    import time
+
+    response = None
+    for attempt in range(6):
+        try:
+            response = llm.invoke(
+                [
+                    HumanMessage(content=system_prompt),
+                    HumanMessage(content=schema_prompt),
+                ]
+            )
+            break
+        except Exception as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                logger.warning(
+                    f"Agent 1: Google Rate Limit hit! Waiting 65 seconds before retry (Attempt {attempt + 1}/6)..."
+                )
+                time.sleep(65)
+                if attempt == 5:
+                    raise e
+            else:
+                raise e
+
     content = response.content
     if isinstance(content, list):
-        content = "".join([c["text"] if isinstance(c, dict) and "text" in c else str(c) for c in content])
-    
+        content = "".join(
+            [
+                c["text"] if isinstance(c, dict) and "text" in c else str(c)
+                for c in content
+            ]
+        )
+
     try:
         raw_text = str(content).strip()
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:-3].strip()
         elif raw_text.startswith("```"):
             raw_text = raw_text[3:-3].strip()
-            
+
         ai_json = json.loads(raw_text)
-        
+
         # FINAL ASSEMBLY: Combine the Python market data with the AI's boolean flags
         final_dict = {
             "symbol": market_dict["symbol"],
-            "exchange": "NSE",
+            "exchange": "NSE"
+            if market_dict["symbol"].endswith(".NS")
+            or market_dict["symbol"].endswith(".BO")
+            else "NASDAQ",
             "current_price": market_dict["current_price"],
             "timestamp": market_dict["timestamp"],
             "breakout_detected": ai_json.get("breakout_detected", False),
@@ -84,14 +113,15 @@ def analyze_market_node(state: Agent1State):
             "key_support_level": ai_json.get("key_support_level", 0.0),
             "key_resistance_level": ai_json.get("key_resistance_level", 0.0),
             "summary": ai_json.get("summary", ""),
-            "ohlcv_candles": market_dict["ohlcv_candles"]
+            "ohlcv_candles": market_dict["ohlcv_candles"],
         }
-        
+
     except Exception as e:
         logger.error(f"Failed to parse Agent 1 JSON: {e}")
         final_dict = {"error": "Failed to generate JSON"}
-        
+
     return {"final_scan_json": final_dict}
+
 
 # Build the Workflow
 workflow = StateGraph(Agent1State)
